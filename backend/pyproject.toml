@@ -1,0 +1,12 @@
+[project]
+name = "erp-ai-autopilot-backend"
+version = "0.1.0"
+description = "FastAPI backend for ERP AI Autopilot using Gemini Multimodal Live API"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.100.0",
+    "google-genai>=0.3.0",
+    "pillow>=10.0.0",
+    "uvicorn>=0.25.0",
+    "websockets>=12.0",
+]
