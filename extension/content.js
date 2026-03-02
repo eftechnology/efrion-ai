@@ -1,5 +1,8 @@
 let mediaRecorder;
 let screenCaptureInterval;
+let domDirty = true;
+let cachedAccessibilityTree = [];
+let mutationObserver = null;
 
 // ==============================================================================
 // IN-PAGE HUD
@@ -77,13 +80,35 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         createHUD();
         startRecording();
         
+        // Setup MutationObserver to track DOM changes
+        if (!mutationObserver) {
+            mutationObserver = new MutationObserver(() => {
+                domDirty = true;
+            });
+            // We observe the body, ignoring our own HUD and Ghost Cursor elements
+            mutationObserver.observe(document.body, { 
+                childList: true, 
+                subtree: true, 
+                attributes: true, 
+                attributeFilter: ['class', 'style', 'hidden', 'disabled'] 
+            });
+        }
+        
         // Start taking screenshots and capturing page state every 1.5 seconds
         screenCaptureInterval = setInterval(() => {
+            let treeToSend = null;
+            if (domDirty) {
+                cachedAccessibilityTree = getSimplifiedAccessibilityTree();
+                treeToSend = cachedAccessibilityTree;
+                domDirty = false;
+            }
+            
             const pageState = {
                 url: window.location.href,
                 title: document.title,
                 readyState: document.readyState,
-                accessibilityTree: getSimplifiedAccessibilityTree()
+                accessibilityTree: treeToSend,
+                domChanged: treeToSend !== null
             };
             chrome.runtime.sendMessage({ 
                 action: 'capture_screen', 
@@ -118,6 +143,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         stopRecording();
         removeHUD();
         clearInterval(screenCaptureInterval);
+        if (mutationObserver) {
+            mutationObserver.disconnect();
+            mutationObserver = null;
+        }
     }
 });
 

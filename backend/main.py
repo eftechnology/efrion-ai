@@ -127,19 +127,22 @@ async def websocket_endpoint(websocket: WebSocket):
                             
                             page_state = message.get("pageState", {})
                             
-                            # Construct a textual representation of the DOM snapshot
-                            dom_text = f"URL: {page_state.get('url')}\n"
-                            dom_text += f"Title: {page_state.get('title')}\n"
-                            dom_text += f"Ready State: {page_state.get('readyState')}\n"
-                            dom_text += f"Accessibility Tree:\n{json.dumps(page_state.get('accessibilityTree', []), indent=2)}"
-
-                            await gemini_session.send(input=types.LiveClientRealtimeInput(
-                                media_chunks=[types.Blob(
+                            input_args = {
+                                "media_chunks": [types.Blob(
                                     mime_type="image/jpeg",
                                     data=image_data
-                                )],
-                                text=dom_text
-                            ))
+                                )]
+                            }
+
+                            # Only send the textual representation of the DOM if it has changed
+                            if page_state.get('domChanged'):
+                                dom_text = f"URL: {page_state.get('url')}\n"
+                                dom_text += f"Title: {page_state.get('title')}\n"
+                                dom_text += f"Ready State: {page_state.get('readyState')}\n"
+                                dom_text += f"Accessibility Tree:\n{json.dumps(page_state.get('accessibilityTree', []), indent=2)}"
+                                input_args["text"] = dom_text
+
+                            await gemini_session.send(input=types.LiveClientRealtimeInput(**input_args))
                             
                         elif message.get("type") == "status":
                             print(f"Frontend Status: {message.get('message')} - {message.get('detail', '')}")

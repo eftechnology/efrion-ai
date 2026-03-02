@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mock ERP System</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f4f7f6;
+            color: #333;
+        }
+        header {
+            background-color: #0056b3;
+            color: white;
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        nav button {
+            background: rgba(255,255,255,0.2);
+            border: none;
+            color: white;
+            padding: 8px 15px;
+            cursor: pointer;
+            border-radius: 4px;
+            margin-left: 10px;
+        }
+        nav button:hover {
+            background: rgba(255,255,255,0.4);
+        }
+        .container {
+            padding: 30px;
+            max-width: 1200px;
+            margin: auto;
+        }
+        .card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        input[type="text"], select, textarea {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0 20px 0;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        .btn-primary {
+            background-color: #28a745;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+        .btn-primary:hover {
+            background-color: #218838;
+        }
+        .spacer {
+            height: 1000px; /* Force scrolling for testing */
+            background: linear-gradient(to bottom, #eaeaea, #f4f7f6);
+            border: 1px dashed #ccc;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #888;
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <h2>Acme Corp ERP</h2>
+    <nav>
+        <button id="nav-dashboard">Dashboard</button>
+        <button id="nav-hr">HR Portal</button>
+        <button id="nav-finance">Finance</button>
+        <button id="nav-settings">Settings</button>
+    </nav>
+</header>
+
+<div class="container">
+    <div class="card">
+        <h3>Create New Invoice</h3>
+        <label for="vendor-name">Vendor Name</label>
+        <input type="text" id="vendor-name" placeholder="Enter vendor name...">
+
+        <label for="invoice-amount">Amount ($)</label>
+        <input type="text" id="invoice-amount" placeholder="e.g. 500.00">
+
+        <button class="btn-primary" id="submit-invoice" onclick="alert('Invoice Submitted!')">Submit Invoice</button>
+    </div>
+
+    <div class="card">
+        <h3>Employee Search</h3>
+        <input type="text" id="search-bar" placeholder="Search by name or ID...">
+        <button class="btn-primary" id="search-btn" style="background-color: #007bff;">Search</button>
+    </div>
+
+    <div class="card">
+        <h3>Scroll Test Area</h3>
+        <p>This large empty area is here to test the AI's ability to scroll down the page to find elements.</p>
+        <div class="spacer">
+            (Keep scrolling)
+        </div>
+        <button class="btn-primary" id="hidden-footer-btn" onclick="alert('You found the hidden button!')">Acknowledge Policy</button>
+    </div>
+</div>
+
+<script>
+    // Just some basic JS to give feedback when elements are interacted with
+    document.querySelectorAll('input').forEach(input => {
+        input.addEventListener('change', (e) => {
+            console.log(`Input ${e.target.id} changed to: ${e.target.value}`);
+        });
+    });
+</script>
+
+</body>
+</html>
