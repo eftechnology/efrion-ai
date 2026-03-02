@@ -1,11 +1,83 @@
 let mediaRecorder;
 let screenCaptureInterval;
 
+// ==============================================================================
+// IN-PAGE HUD
+// ==============================================================================
+function createHUD() {
+    if (document.getElementById('erp-ai-hud')) return;
+    const hud = document.createElement('div');
+    hud.id = 'erp-ai-hud';
+    hud.style.position = 'fixed';
+    hud.style.bottom = '20px';
+    hud.style.right = '20px';
+    hud.style.padding = '10px 15px';
+    hud.style.backgroundColor = '#333';
+    hud.style.color = '#fff';
+    hud.style.borderRadius = '20px';
+    hud.style.fontFamily = 'sans-serif';
+    hud.style.fontSize = '14px';
+    hud.style.zIndex = '9999999';
+    hud.style.boxShadow = '0 4px 6px rgba(0,0,0,0.3)';
+    hud.style.display = 'flex';
+    hud.style.alignItems = 'center';
+    hud.style.gap = '8px';
+    hud.innerHTML = `
+        <div id="erp-ai-indicator" style="width: 10px; height: 10px; border-radius: 50%; background-color: #4CAF50; animation: erp-pulse-green 1.5s infinite;"></div>
+        <span id="erp-ai-status-text">AI Listening...</span>
+    `;
+    
+    const style = document.createElement('style');
+    style.id = 'erp-ai-style';
+    style.innerHTML = `
+      @keyframes erp-pulse-green {
+        0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.7); }
+        70% { transform: scale(1.1); box-shadow: 0 0 0 6px rgba(76, 175, 80, 0); }
+        100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(76, 175, 80, 0); }
+      }
+      @keyframes erp-pulse-blue {
+        0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(33, 150, 243, 0.7); }
+        70% { transform: scale(1.1); box-shadow: 0 0 0 6px rgba(33, 150, 243, 0); }
+        100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(33, 150, 243, 0); }
+      }
+    `;
+    document.head.appendChild(style);
+    document.body.appendChild(hud);
+}
+
+function removeHUD() {
+    const hud = document.getElementById('erp-ai-hud');
+    const style = document.getElementById('erp-ai-style');
+    if (hud) hud.remove();
+    if (style) style.remove();
+}
+
+function updateHUD(status) {
+    const text = document.getElementById('erp-ai-status-text');
+    const indicator = document.getElementById('erp-ai-indicator');
+    if (!text || !indicator) return;
+
+    if (status === 'listening') {
+        text.innerText = 'AI Listening...';
+        indicator.style.backgroundColor = '#4CAF50';
+        indicator.style.animation = 'erp-pulse-green 1.5s infinite';
+    } else if (status === 'speaking') {
+        text.innerText = 'AI Speaking...';
+        indicator.style.backgroundColor = '#2196F3';
+        indicator.style.animation = 'erp-pulse-blue 1.5s infinite';
+    } else if (status === 'processing') {
+        text.innerText = 'AI Executing Action...';
+        indicator.style.backgroundColor = '#FFC107';
+        indicator.style.animation = 'none';
+    }
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === 'ws_connected') {
+        createHUD();
         startRecording();
         
-        // Start taking screenshots and capturing page state every 2 seconds
+        // Start taking screenshots and capturing page state every 1.5 seconds
         screenCaptureInterval = setInterval(() => {
             const pageState = {
                 url: window.location.href,
@@ -17,20 +89,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 action: 'capture_screen', 
                 pageState: pageState 
             });
-        }, 2000);
+        }, 1500);
         
     } else if (message.type === 'command') {
+        updateHUD('processing');
         if (message.command === 'stop_audio') {
             audioQueue = [];
             isPlaying = false;
             nextStartTime = 0;
             console.log("🛑 Audio playback interrupted and flushed.");
-            // If we have an active audioContext, we could theoretically suspend or close the source,
-            // but simply clearing the queue and state prevents future chunks from playing.
-            // For a hard stop, we can suspend and resume the context.
             if (audioContext && audioContext.state === 'running') {
                 audioContext.suspend().then(() => audioContext.resume());
             }
+            updateHUD('listening');
         } else if (message.command === 'click_element') {
             simulateClickWithGhostCursor(message.id);
         } else if (message.command === 'type_text') {
@@ -39,11 +110,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             scrollPage(message.direction);
         }
     } else if (message.type === 'audio') {
+        updateHUD('speaking');
         // Play the text-to-speech audio received from Gemini
         playAudio(message.data, message.mime_type);
         
     } else if (message.action === 'stop') {
         stopRecording();
+        removeHUD();
         clearInterval(screenCaptureInterval);
     }
 });
@@ -174,7 +247,11 @@ function simulateClickWithGhostCursor(id) {
         console.log(`🎯 Clicked element ${id}`);
         
         // Cleanup
-        setTimeout(() => cursor.remove(), 300);
+        setTimeout(() => {
+            cursor.remove();
+            updateHUD('listening');
+            chrome.runtime.sendMessage({ action: 'action_completed', detail: `Clicked ${id}` });
+        }, 300);
     }, 500);
 }
 
@@ -182,6 +259,7 @@ function typeTextIntoElement(id, text) {
     const el = document.querySelector(`[data-gemini-id="${id}"]`);
     if (!el) {
         console.warn(`Element with id ${id} not found for typing.`);
+        updateHUD('listening');
         return;
     }
     
@@ -192,6 +270,11 @@ function typeTextIntoElement(id, text) {
     el.dispatchEvent(new Event('input', { bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
     console.log(`⌨️ Typed "${text}" into element ${id}`);
+    
+    setTimeout(() => {
+        updateHUD('listening');
+        chrome.runtime.sendMessage({ action: 'action_completed', detail: `Typed into ${id}` });
+    }, 300);
 }
 
 function scrollPage(direction) {
@@ -202,6 +285,11 @@ function scrollPage(direction) {
         window.scrollBy({ top: -scrollAmount, behavior: 'smooth' });
     }
     console.log(`📜 Scrolled ${direction}`);
+    
+    setTimeout(() => {
+        updateHUD('listening');
+        chrome.runtime.sendMessage({ action: 'action_completed', detail: `Scrolled ${direction}` });
+    }, 500);
 }
 
 // ============================================================================
@@ -293,6 +381,7 @@ function playNextInQueue() {
             isPlaying = false;
             // Reset nextStartTime so future audio doesn't have an artificial delay
             nextStartTime = 0; 
+            updateHUD('listening');
         } else {
             playNextInQueue();
         }

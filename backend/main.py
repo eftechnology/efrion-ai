@@ -98,8 +98,10 @@ async def websocket_endpoint(websocket: WebSocket):
         # Connect to the Gemini Live API
         async with client.aio.live.connect(model="gemini-2.5-flash-native-audio-preview-12-2025", config=config) as gemini_session:
             print("Connected to Gemini 2.5 Native Audio Preview Multimodal Live API")
+            
+            pending_tool_calls = {}
 
-            # Task 1: Receive audio/images from extension and forward to Gemini
+            # Task 1: Receive audio/images/status from extension and forward to Gemini
             async def receive_from_extension():
                 try:
                     while True:
@@ -138,6 +140,20 @@ async def websocket_endpoint(websocket: WebSocket):
                                 )],
                                 text=dom_text
                             ))
+                            
+                        elif message.get("type") == "status":
+                            print(f"Frontend Status: {message.get('message')} - {message.get('detail', '')}")
+                            # Resolve pending tool calls
+                            for tool_name, call_id in list(pending_tool_calls.items()):
+                                await gemini_session.send(input=types.LiveClientToolResponse(
+                                    function_responses=[types.FunctionResponse(
+                                        name=tool_name,
+                                        id=call_id,
+                                        response={"result": message.get("message"), "detail": message.get("detail", "")}
+                                    )]
+                                ))
+                            pending_tool_calls.clear()
+
                 except WebSocketDisconnect:
                     print("Extension disconnected.")
                 except Exception as e:
@@ -175,6 +191,8 @@ async def websocket_endpoint(websocket: WebSocket):
                                 if name in ["click_element", "type_text", "scroll_page"]:
                                     print(f"Gemini requested tool call: {name}(args={args})")
                                     
+                                    pending_tool_calls[name] = function_call.id
+                                    
                                     # Send command to the Chrome extension to execute the UI action
                                     command_payload = {
                                         "type": "command",
@@ -184,16 +202,6 @@ async def websocket_endpoint(websocket: WebSocket):
                                     command_payload.update(args)
                                     
                                     await websocket.send_json(command_payload)
-                                    
-                                    # Immediately send the result of the tool call back to Gemini
-                                    # In a real app with a closed loop, we'd wait for the frontend to reply
-                                    await gemini_session.send(input=types.LiveClientToolResponse(
-                                        function_responses=[types.FunctionResponse(
-                                            name=name,
-                                            id=function_call.id,
-                                            response={"result": f"{name} executed successfully"}
-                                        )]
-                                    ))
 
                 except asyncio.CancelledError:
                     pass

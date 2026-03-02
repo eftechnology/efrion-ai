@@ -1,6 +1,9 @@
 document.getElementById('startBtn').addEventListener('click', () => {
     chrome.runtime.sendMessage({ action: 'start_session' }, (response) => {
-        document.getElementById('status').innerText = 'Status: 🟢 Connected & Listening';
+        document.getElementById('status-text').innerText = 'Connected & Listening';
+        const indicator = document.getElementById('status-indicator');
+        indicator.className = 'indicator listening';
+        
         document.getElementById('startBtn').disabled = true;
         document.getElementById('stopBtn').disabled = false;
     });
@@ -16,7 +19,10 @@ document.getElementById('stopBtn').addEventListener('click', () => {
         }
     });
 
-    document.getElementById('status').innerText = 'Status: 🔴 Disconnected';
+    document.getElementById('status-text').innerText = 'Disconnected';
+    const indicator = document.getElementById('status-indicator');
+    indicator.className = 'indicator disconnected';
+    
     document.getElementById('startBtn').disabled = false;
     document.getElementById('stopBtn').disabled = true;
 });
