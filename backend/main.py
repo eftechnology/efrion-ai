@@ -216,75 +216,70 @@ async def websocket_endpoint(websocket: WebSocket):
 
             # Task 2: Receive audio/function calls from Gemini and send to extension
             async def receive_from_gemini():
-                while True: # Keep the receiver alive across potential generator restarts
-                    try:
-                        async for response in gemini_session.receive():
-                            # Log response structure for debugging (minus audio data)
-                            if response.server_content:
-                                content = response.server_content
-                                print(f"📤 Gemini -> Backend: server_content (interrupted={getattr(content, 'interrupted', False)}, turn_complete={content.turn_complete})")
-                            if response.tool_call:
-                                print(f"📤 Gemini -> Backend: tool_call ({[fc.name for fc in response.tool_call.function_calls]})")
+                try:
+                    async for response in gemini_session.receive():
+                        # Log response structure for debugging (minus audio data)
+                        if response.server_content:
+                            content = response.server_content
+                            print(f"📤 Gemini -> Backend: server_content (interrupted={getattr(content, 'interrupted', False)}, turn_complete={content.turn_complete})")
+                        if response.tool_call:
+                            print(f"📤 Gemini -> Backend: tool_call ({[fc.name for fc in response.tool_call.function_calls]})")
 
-                            server_content = response.server_content
-                            
-                            # 1. Handle Transcriptions and Audio
-                            if server_content is not None:
-                                if getattr(server_content, 'interrupted', False):
-                                    print(f"⚠️ User interrupted the model! (turn_complete={server_content.turn_complete})")
-                                    await websocket.send_json({"type": "command", "command": "stop_audio"})
-                                    
-                                # Debug: Print Model Transcriptions and Audio
-                                if server_content.model_turn:
-                                    for part in server_content.model_turn.parts:
-                                        if part.text:
-                                            print(f"🤖 Gemini says: {part.text}")
-                                        if part.inline_data:
-                                            data_len = len(part.inline_data.data)
-                                            print(f"📤 Gemini -> Backend: Audio Chunk ({data_len} bytes)")
-                                            audio_data = part.inline_data.data
-                                            if isinstance(audio_data, bytes):
-                                                audio_data = base64.b64encode(audio_data).decode('utf-8')
-                                            await websocket.send_json({
-                                                "type": "audio",
-                                                "data": audio_data,
-                                                "mime_type": part.inline_data.mime_type
-                                            })
-                                
-                                # Debug: Print Input/Output Transcriptions (if available)
-                                if server_content.turn_complete:
-                                    print("🏁 Gemini turn complete. Waiting for next event...")
-                                    pass
-
-                            # 2. Handle Function Calls
-                            if response.tool_call is not None:
-                                for function_call in response.tool_call.function_calls:
-                                    name = function_call.name
-                                    args = function_call.args
-                                    
-                                    print(f"🤖 Gemini Tool Call: {name}({json.dumps(args)})")
-                                    pending_tool_calls[name] = function_call.id
-                                    
-                                    command_payload = {"type": "command", "command": name}
-                                    command_payload.update(args)
-                                    await websocket.send_json(command_payload)
+                        server_content = response.server_content
                         
-                        # If the generator exhausts normally, check if the session is still active
-                        print("ℹ️ Gemini receiver generator exhausted. Checking session health...")
-                        # We don't break here, we let the 'while True' restart or wait if appropriate.
-                        # However, for Live API, if it exhausts, it usually means the session is over.
-                        break 
+                        # 1. Handle Transcriptions and Audio
+                        if server_content is not None:
+                            if getattr(server_content, 'interrupted', False):
+                                print(f"⚠️ User interrupted the model! (turn_complete={server_content.turn_complete})")
+                                await websocket.send_json({"type": "command", "command": "stop_audio"})
+                                
+                            # Debug: Print Model Transcriptions and Audio
+                            if server_content.model_turn:
+                                for part in server_content.model_turn.parts:
+                                    if part.text:
+                                        print(f"🤖 Gemini says: {part.text}")
+                                    if part.inline_data:
+                                        data_len = len(part.inline_data.data)
+                                        print(f"📤 Gemini -> Backend: Audio Chunk ({data_len} bytes)")
+                                        audio_data = part.inline_data.data
+                                        if isinstance(audio_data, bytes):
+                                            audio_data = base64.b64encode(audio_data).decode('utf-8')
+                                        await websocket.send_json({
+                                            "type": "audio",
+                                            "data": audio_data,
+                                            "mime_type": part.inline_data.mime_type
+                                        })
+                            
+                            # Debug: Print Input/Output Transcriptions (if available)
+                            if server_content.turn_complete:
+                                print("🏁 Gemini turn complete. Waiting for next event...")
+                                pass
 
-                    except asyncio.CancelledError:
-                        print("⚙️ Gemini receiver task cancelled.")
-                        raise
-                    except Exception as e:
-                        import traceback
-                        print(f"❌ Error receiving from Gemini: {e}")
-                        traceback.print_exc()
-                        break # Exit the while loop on error
-                    finally:
-                        print("🏁 Gemini receiver task loop iteration finished.")
+                        # 2. Handle Function Calls
+                        if response.tool_call is not None:
+                            for function_call in response.tool_call.function_calls:
+                                name = function_call.name
+                                args = function_call.args
+                                
+                                print(f"🤖 Gemini Tool Call: {name}({json.dumps(args)})")
+                                pending_tool_calls[name] = function_call.id
+                                
+                                command_payload = {"type": "command", "command": name}
+                                command_payload.update(args)
+                                await websocket.send_json(command_payload)
+                    
+                    # If the generator exhausts normally
+                    print("ℹ️ Gemini receiver generator exhausted. (turn_complete reached).")
+
+                except asyncio.CancelledError:
+                    print("⚙️ Gemini receiver task cancelled.")
+                    raise
+                except Exception as e:
+                    import traceback
+                    print(f"❌ Error receiving from Gemini: {e}")
+                    traceback.print_exc()
+                finally:
+                    print("🏁 Gemini receiver task interaction finished.")
 
             # Run both bidirectional communication tasks concurrently
             t1 = asyncio.create_task(receive_from_extension())
@@ -310,24 +305,27 @@ async def websocket_endpoint(websocket: WebSocket):
                     elif task == t2:
                         print("🔚 Gemini receiver task finished.")
                         try:
+                            # If t2 finished normally (not cancelled), we might want to restart it
+                            # unless exit_logic_triggered is set by extension.
                             task.result()
+                            print("🔄 Gemini receiver exhausted normally. Recreating task...")
+                            t2 = asyncio.create_task(receive_from_gemini())
                         except asyncio.CancelledError:
                             pass
                         except Exception as e:
                             print(f"⚠️ Gemini task error: {e}")
                             exit_logic_triggered = True # Exit on Gemini error
 
-                if exit_logic_triggered or not pending:
+                if exit_logic_triggered:
                     break
                 
-                # If Gemini finished normally but extension is still there, maybe wait?
-                # For now, if either finishes and we don't restart, the session is crippled.
-                # However, if t2 finishes naturally, t1 (extension) will still be running.
-                # We should probably only break if the extension is gone.
+                # Check if extension is gone
                 if t1 in done:
                     break
                 
-                print("🔄 One task finished, but session continues (waiting for remaining tasks).")
+                # If everything else is fine but a task finished, we continue and wait again.
+                # If t2 was recreated, it's now in the next iteration's wait list.
+                continue
 
             print(f"🛑 Communication session ended. Tasks done: {len(done)}, pending: {len(pending)}")
             for task in pending:
