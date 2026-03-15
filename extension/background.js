@@ -78,7 +78,7 @@ function connectWebSocket() {
     ws = new WebSocket('ws://localhost:8000/ws');
     
     ws.onopen = () => {
-        console.log('WebSocket connected to Python backend');
+        console.log('✅ WebSocket connected to Python backend at ws://localhost:8000/ws');
         if (reconnectInterval) {
             clearTimeout(reconnectInterval);
             reconnectInterval = null;

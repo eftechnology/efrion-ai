@@ -108,6 +108,7 @@ ui_tools = types.Tool(
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
+    print("🔌 New extension connection accepted")
     
     # Configure the Gemini Live API session
     config = types.LiveConnectConfig(
@@ -149,6 +150,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
     try:
         # Connect to the Gemini Live API
+        print(f"🔗 Connecting to Gemini Live API with model: gemini-2.5-flash-native-audio-preview-12-2025")
         async with client.aio.live.connect(model="gemini-2.5-flash-native-audio-preview-12-2025", config=config) as gemini_session:
             print("🟢 Connected to Gemini 2.5 Live API")
             
