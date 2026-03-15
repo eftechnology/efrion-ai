@@ -1,8 +1,14 @@
-let screenCaptureInterval;
+let screenCaptureIntervalId = null; 
+let screenCaptureInterval = 5000;
 let domDirty = true;
 let cachedAccessibilityTree = [];
 let mutationObserver = null;
 let isPushToTalkActive = false;
+let isPlaying = false; 
+let lastSpeechEndTime = 0;
+const POST_SPEECH_COOLDOWN_MS = 5000;
+let isCoolingDown = false;
+let lastTreeJson = ''; // Used to track DOM changes
 
 // ==============================================================================
 // SAFE MESSAGING & CLEANUP
@@ -10,9 +16,9 @@ let isPushToTalkActive = false;
 function cleanupSession() {
     console.log("🧹 Cleaning up old session due to extension reload...");
     removeHUD();
-    if (screenCaptureInterval) {
-        clearInterval(screenCaptureInterval);
-        screenCaptureInterval = null;
+    if (screenCaptureIntervalId) {
+        clearInterval(screenCaptureIntervalId);
+        screenCaptureIntervalId = null;
     }
     if (mutationObserver) {
         mutationObserver.disconnect();
@@ -20,6 +26,7 @@ function cleanupSession() {
     }
     stopRecording();
     isPushToTalkActive = false;
+    isPlaying = false;
 }
 
 function safeSendMessage(payload) {
@@ -115,6 +122,27 @@ function createHUD() {
                 </svg>
             </button>
         </div>
+        <div id="erp-ai-transcript" style="
+            border-left: 1px solid #444;
+            padding-left: 15px;
+            font-size: 12px;
+            color: #aaa;
+            max-width: 200px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            font-weight: 400;
+        ">Waiting for sound...</div>
+        <div id="erp-ai-volume-container" style="
+            width: 40px;
+            height: 4px;
+            background: #333;
+            border-radius: 2px;
+            overflow: hidden;
+            display: none;
+        ">
+            <div id="erp-ai-volume-meter" style="width: 0%; height: 100%; background: #4CAF50; transition: width 0.1s;"></div>
+        </div>
     `;
     
     const style = document.createElement('style');
@@ -142,7 +170,7 @@ function createHUD() {
     const micBtn = document.getElementById('erp-ai-mic-btn');
     const stopBtn = document.getElementById('erp-ai-stop-btn');
     
-    const startPTT = (e) => {
+    const startPTT = (e) => { return; 
         if (e) e.preventDefault();
         if (!isPushToTalkActive) {
             isPushToTalkActive = true;
@@ -152,7 +180,7 @@ function createHUD() {
         }
     };
 
-    const stopPTT = (e) => {
+    const stopPTT = (e) => { return; 
         if (isPushToTalkActive) {
             isPushToTalkActive = false;
             micBtn.classList.remove('active');
@@ -198,16 +226,68 @@ function updateHUD(status) {
         text.innerText = 'AI Speaking...';
         indicator.style.backgroundColor = '#2196F3';
         indicator.style.animation = 'none';
+        document.getElementById('erp-ai-volume-container').style.display = 'none';
     } else if (status === 'processing') {
         text.innerText = 'Executing...';
         indicator.style.backgroundColor = '#FFC107';
         indicator.style.animation = 'none';
+        document.getElementById('erp-ai-volume-container').style.display = 'none';
     }
+}
+
+function updateTranscriptHUD(source, transcript) {
+    const el = document.getElementById('erp-ai-transcript');
+    if (!el) return;
+    const prefix = source === 'USER' ? '👤' : '🤖';
+    el.innerText = `${prefix} ${transcript}`;
+    el.style.color = source === 'USER' ? '#eee' : '#2196F3';
+    
+    // Clear transcript after 5 seconds if not updated
+    if (el.transcriptTimeout) clearTimeout(el.transcriptTimeout);
+    el.transcriptTimeout = setTimeout(() => {
+        el.innerText = '...';
+        el.style.color = '#555';
+    }, 5000);
+}
+
+function captureAndSend(domOnly = false) {
+    if (isCoolingDown || isPlaying) return; // Completely silent during speech or cooldown
+
+    let treeToSend = null;
+    if (domDirty) {
+        const tree = getSimplifiedAccessibilityTree();
+        const treeJson = JSON.stringify(tree);
+        
+        // Only send if the tree has actually changed
+        if (treeJson !== lastTreeJson) {
+            treeToSend = tree;
+            lastTreeJson = treeJson;
+        }
+        domDirty = false;
+    }
+
+    // Only skip image capture if explicitly told or if just sent recently (logic can be expanded)
+    const pageState = {
+        url: window.location.href,
+        title: document.title,
+        readyState: document.readyState,
+        accessibilityTree: treeToSend,
+        domChanged: treeToSend !== null
+    };
+
+    // If nothing changed and we aren't sending an image, don't send anything
+    if (!treeToSend && domOnly) return;
+
+    safeSendMessage({ action: 'capture_screen', skipImage: domOnly, pageState: pageState });
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === 'ws_connected') {
         createHUD();
+        // Set volume container visible when connected
+        const vol = document.getElementById('erp-ai-volume-container');
+        if (vol) vol.style.display = 'block';
+        
         startRecording();
         if (!mutationObserver) {
             mutationObserver = new MutationObserver(() => domDirty = true);
@@ -216,21 +296,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 attributeFilter: ['class', 'style', 'hidden', 'disabled'] 
             });
         }
-        screenCaptureInterval = setInterval(() => {
-            let treeToSend = null;
-            if (domDirty) {
-                cachedAccessibilityTree = getSimplifiedAccessibilityTree();
-                treeToSend = cachedAccessibilityTree;
-                domDirty = false;
-            }
+        if (screenCaptureIntervalId) clearInterval(screenCaptureIntervalId);
         screenCaptureIntervalId = setInterval(() => {
-            // 1. Skip sending screenshots/DOM updates if the AI is currently speaking to avoid "interruption" restarts.
-            // Any message sent during model output closes the Gemini generator.
-            if (isPlaying) {
-                console.log('🤐 AI is speaking, sending DOM update only (no screenshot)');
-                captureAndSend(true); // DOM only
-                return;
-            }
+            // 1. Skip sending screenshots/DOM updates if the AI is currently speaking
+            if (isPlaying) return;
 
             // 2. Post-speech cooldown check
             const now = Date.now();
@@ -241,7 +310,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             }
 
             captureAndSend();
-        }, screenCaptureInterval); // Use the global screenCaptureInterval variable
+        }, screenCaptureInterval);
     } else if (message.type === 'command') {
         updateHUD('processing');
         if (message.command === 'stop_audio') {
@@ -254,6 +323,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         else if (message.command === 'navigate_to') navigateTo(message.url);
         else if (message.command === 'read_text') readText(message.query);
         else if (message.command === 'highlight_element') highlightElement(message.id);
+    } else if (message.type === 'transcription') {
+        updateTranscriptHUD(message.source, message.text);
     } else if (message.type === 'audio') {
         playAudio(message.data, message.mime_type);
     } else if (message.type === 'error') {
@@ -261,7 +332,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         safeSendMessage({ action: 'stop_session' });
     } else if (message.action === 'stop') {
         stopRecording(); removeHUD();
-        if (screenCaptureIntervalId) clearInterval(screenCaptureIntervalId); // Use the renamed ID
+        if (screenCaptureIntervalId) clearInterval(screenCaptureIntervalId);
         if (mutationObserver) { mutationObserver.disconnect(); mutationObserver = null; }
     } else if (message.action === 'play_audio') {
         console.log('🔊 AI started speaking');
@@ -270,8 +341,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     } else if (message.action === 'stop_audio') {
         console.log('🤐 AI finished speaking');
         isPlaying = false;
-        lastSpeechEndTime = Date.now(); // Mark when speech ended
-        updateHUD('idle'); // Changed from 'listening' to 'idle' as per original logic for non-PTT
+        lastSpeechEndTime = Date.now(); 
+        updateHUD('idle');
     }
 });
 
@@ -313,51 +384,108 @@ function arrayBufferToBase64(buffer) {
     return btoa(binary);
 }
 
+// Utility to correctly downsample buffer to 16kHz
+function downsampleBuffer(buffer, sampleRate, outSampleRate) {
+    if (outSampleRate === sampleRate) return buffer;
+    const ratio = sampleRate / outSampleRate;
+    const newLength = Math.round(buffer.length / ratio);
+    const result = new Float32Array(newLength);
+    let offsetResult = 0;
+    let offsetBuffer = 0;
+    while (offsetResult < result.length) {
+        const nextOffsetBuffer = Math.round((offsetResult + 1) * ratio);
+        let accum = 0, count = 0;
+        for (let i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i++) {
+            accum += buffer[i];
+            count++;
+        }
+        result[offsetResult] = accum / count;
+        offsetResult++;
+        offsetBuffer = nextOffsetBuffer;
+    }
+    return result;
+}
+
+function convertFloat32ToInt16(buffer) {
+    let l = buffer.length;
+    const buf = new Int16Array(l);
+    while (l--) {
+        buf[l] = Math.min(1, Math.max(-1, buffer[l])) * 0x7FFF;
+    }
+    return buf.buffer;
+}
+
 async function startRecording() {
     console.log("🎙️ startRecording() called");
     try {
-        audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioStream = await navigator.mediaDevices.getUserMedia({ 
+            audio: {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true,
+            } 
+        });
         console.log("✅ Microphone access granted");
 
-        audioInputContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+        // Native sample rate to prevent zeroing issues
+        audioInputContext = new (window.AudioContext || window.webkitAudioContext)();
         await audioInputContext.resume();
-        console.log(`🔊 AudioContext state: ${audioInputContext.state}`);
+        console.log(`🔊 AudioContext initialized at ${audioInputContext.sampleRate}Hz. State: ${audioInputContext.state}`);
 
         const workletUrl = chrome.runtime.getURL('recorder-worklet.js');
         await audioInputContext.audioWorklet.addModule(workletUrl);
-        console.log("✅ AudioWorklet module loaded");
 
         const source = audioInputContext.createMediaStreamSource(audioStream);
         workletNode = new AudioWorkletNode(audioInputContext, 'recorder-processor');
-        
+
         let totalSentChunks = 0;
+
         workletNode.port.onmessage = (event) => {
             const msg = event.data;
             if (msg.type === 'pcm_data') {
-                if (isPushToTalkActive) {
-                    const base64Audio = arrayBufferToBase64(msg.buffer.buffer);
-                    safeSendMessage({ action: 'send_audio', data: base64Audio });
-                    totalSentChunks++;
-                    if (totalSentChunks % 10 === 0) {
-                        console.log(`🎤 Audio Stream: Sent ${totalSentChunks} chunks`);
-                    }
+                const inputChannel = msg.buffer; // Raw Float32Array from worklet
+
+                // Downsample to 16kHz
+                const downsampled = downsampleBuffer(inputChannel, audioInputContext.sampleRate, 16000);
+
+                // Convert to PCM16
+                const pcm16Buffer = convertFloat32ToInt16(downsampled);
+                const pcm16Array = new Int16Array(pcm16Buffer);
+
+                let maxVal = 0;
+                for (let j = 0; j < pcm16Array.length; j++) {
+                    const abs = Math.abs(pcm16Array[j]);
+                    if (abs > maxVal) maxVal = abs;
                 }
-            } else if (msg.type === 'worklet_started') {
-                console.log("🚀 Worklet processing loop started");
+                const volumePercent = Math.min(100, (maxVal / 32768) * 100);
+                const meter = document.getElementById('erp-ai-volume-meter');
+                if (meter) meter.style.width = `${volumePercent}%`;
+
+                const base64Audio = arrayBufferToBase64(pcm16Buffer);
+                safeSendMessage({ action: 'send_audio', data: base64Audio });
+
+                totalSentChunks++;
+                if (totalSentChunks % 20 === 0) {
+                    console.log(`🎤 Audio Stream: Sent ${totalSentChunks} chunks (Vol: ${volumePercent.toFixed(1)}%)`);
+                }
             }
         };
 
         source.connect(workletNode);
-        workletNode.connect(audioInputContext.destination);
+
+        // Connect to destination but muted to keep graph active on some browsers
+        const muteGain = audioInputContext.createGain();
+        muteGain.gain.value = 0;
+        workletNode.connect(muteGain);
+        muteGain.connect(audioInputContext.destination);
+
         console.log("🎤 Recording pipeline initialized");
-        
+
     } catch (err) {
         console.error("❌ Audio Error:", err);
         safeSendMessage({ action: 'stop_session' });
     }
-}
-
-function stopRecording() {
+}function stopRecording() {
     if (workletNode) { workletNode.disconnect(); workletNode = null; }
     if (audioInputContext) { audioInputContext.close(); audioInputContext = null; }
     if (audioStream) { audioStream.getTracks().forEach(track => track.stop()); audioStream = null; }
@@ -458,15 +586,7 @@ function highlightElement(id) {
 
 let audioContext;
 let audioQueue = [];
-let isPlaying = false; // This variable is now managed by 'play_audio' and 'stop_audio' messages
 let nextStartTime = 0;
-
-let screenCaptureInterval = 5000; // Increased to 5s to reduce chattiness
-let isRecording = false; // Not directly used in this snippet, but added as per instruction
-let lastDomHash = ''; // Not directly used in this snippet, but added as per instruction
-let lastCaptureTime = 0; // Not directly used in this snippet, but added as per instruction
-const POST_SPEECH_COOLDOWN_MS = 5000; // Wait 5s after AI finishes speaking
-let lastSpeechEndTime = 0;
 
 function initAudioContext() {
     if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
@@ -505,7 +625,12 @@ function playNextInQueue() {
     source.start(nextStartTime);
     nextStartTime += buffer.duration;
     source.onended = () => {
-        if (audioQueue.length === 0) { isPlaying = false; nextStartTime = 0; updateHUD('idle'); } 
+        if (audioQueue.length === 0) { 
+            isPlaying = false; 
+            lastSpeechEndTime = Date.now();
+            nextStartTime = 0; 
+            updateHUD('idle'); 
+        } 
         else { playNextInQueue(); }
     };
 }

@@ -50,22 +50,47 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             return false;
         }
 
+        chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
+            const tab = tabs[0];
+            if (!tab || !tab.url) return;
+
+            // Skip privileged URLs
+            if (tab.url.startsWith('chrome://') || 
+                tab.url.startsWith('devtools://') || 
+                tab.url.startsWith('edge://') ||
+                tab.url.startsWith('view-source:')) {
+                console.log('🚫 Skipping screen capture for privileged URL:', tab.url);
+                return;
             }
-            
-            const imageChanged = dataUrl !== lastDataUrl;
-            const domChanged = message.pageState.domChanged;
-            
-            if (ws && ws.readyState === WebSocket.OPEN && (imageChanged || domChanged)) {
-                console.log('📤 Sending image/DOM to backend');
-                ws.send(JSON.stringify({ 
-                    type: 'image', 
-                    data: imageChanged ? dataUrl : null,
-                    pageState: message.pageState 
-                }));
-                lastDataUrl = dataUrl;
+
+            try {
+                chrome.tabs.captureVisibleTab(null, { format: 'jpeg', quality: 50 }, (dataUrl) => {
+                    if (chrome.runtime.lastError) {
+                        const errMsg = chrome.runtime.lastError.message;
+                        if (!errMsg.includes("cannot be edited") && !errMsg.includes("not in effect")) {
+                            console.error("Screen capture error:", errMsg);
+                        }
+                        return;
+                    }
+
+                    const imageChanged = dataUrl !== lastDataUrl;
+                    const domChanged = message.pageState.domChanged;
+                    
+                    if (ws && ws.readyState === WebSocket.OPEN && (imageChanged || domChanged)) {
+                        console.log('📤 Sending image/DOM to backend');
+                        ws.send(JSON.stringify({ 
+                            type: 'image', 
+                            data: imageChanged ? dataUrl : null,
+                            pageState: message.pageState 
+                        }));
+                        lastDataUrl = dataUrl;
+                    }
+                });
+            } catch (e) {
+                console.error("Capture capture crash:", e);
             }
         });
-        return false; // Async action, but we don't need to sendResponse back to content script
+        return false; 
     } else if (message.action === 'action_completed') {
         if (ws && ws.readyState === WebSocket.OPEN) {
             console.log('📤 Sending status to backend');
