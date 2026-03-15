@@ -156,17 +156,18 @@ async def websocket_endpoint(websocket: WebSocket):
                         elif message.get("type") == "image":
                             # Receive base64 image (screenshot) and pageState from the extension
                             image_data = message.get("data")
-                            if "," in image_data:
-                                image_data = image_data.split(",")[1] # Strip the data URI prefix
-                            
                             page_state = message.get("pageState", {})
                             
-                            input_args = {
-                                "media_chunks": [types.Blob(
+                            input_args = {}
+                            
+                            if image_data:
+                                if "," in image_data:
+                                    image_data = image_data.split(",")[1] # Strip the data URI prefix
+                                
+                                input_args["media_chunks"] = [types.Blob(
                                     mime_type="image/jpeg",
                                     data=image_data
                                 )]
-                            }
 
                             # Only send the textual representation of the DOM if it has changed
                             if page_state.get('domChanged'):
@@ -176,7 +177,9 @@ async def websocket_endpoint(websocket: WebSocket):
                                 dom_text += f"Accessibility Tree:\n{json.dumps(page_state.get('accessibilityTree', []), indent=2)}"
                                 input_args["text"] = dom_text
 
-                            await gemini_session.send(input=types.LiveClientRealtimeInput(**input_args))
+                            # Only send if we actually have something to update
+                            if input_args:
+                                await gemini_session.send(input=types.LiveClientRealtimeInput(**input_args))
                             
                         elif message.get("type") == "status":
                             print(f"Frontend Status: {message.get('message')} - {message.get('detail', '')}")

@@ -1,10 +1,12 @@
 let ws = null;
 let isIntentionalDisconnect = false;
 let reconnectInterval = null;
+let lastDataUrl = null;
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === 'start_session') {
         isIntentionalDisconnect = false;
+        lastDataUrl = null; // Reset for new session
         connectWebSocket();
         sendResponse({status: 'connecting'});
     } else if (message.action === 'stop_session') {
@@ -21,17 +23,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
     } else if (message.action === 'capture_screen') {
         // Capture the visible tab and send it over WebSocket as a JPEG
-        chrome.tabs.captureVisibleTab(null, { format: 'jpeg', quality: 50 }, (dataUrl) => {
+        chrome.tabs.captureVisibleTab(null, { format: 'jpeg', quality: 40 }, (dataUrl) => {
             if (chrome.runtime.lastError) {
                 console.error(chrome.runtime.lastError.message);
                 return;
             }
-            if (ws && ws.readyState === WebSocket.OPEN && dataUrl) {
+            
+            // Visual Diffing: Only send the image if it has visually changed
+            const imageChanged = dataUrl !== lastDataUrl;
+            const domChanged = message.pageState.domChanged;
+            
+            if (ws && ws.readyState === WebSocket.OPEN && (imageChanged || domChanged)) {
                 ws.send(JSON.stringify({ 
                     type: 'image', 
-                    data: dataUrl,
-                    pageState: message.pageState // Include the accessibility tree and other page info
+                    data: imageChanged ? dataUrl : null,
+                    pageState: message.pageState 
                 }));
+                lastDataUrl = dataUrl;
             }
         });
         return true; 
