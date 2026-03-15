@@ -264,8 +264,11 @@ async def websocket_endpoint(websocket: WebSocket):
                     print(f"❌ Error receiving from Gemini: {e}")
 
             # Run both bidirectional communication tasks concurrently
+            t1 = asyncio.create_task(receive_from_extension())
+            t2 = asyncio.create_task(receive_from_gemini())
+            
             done, pending = await asyncio.wait(
-                [receive_from_extension(), receive_from_gemini()],
+                [t1, t2],
                 return_when=asyncio.FIRST_COMPLETED
             )
             print(f"🛑 Communication session ended. Tasks done: {len(done)}, pending: {len(pending)}")
