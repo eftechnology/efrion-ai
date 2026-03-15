@@ -75,12 +75,15 @@ function updateHUD(status) {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    console.log(`📩 Content script received message: ${JSON.stringify(message)}`);
     if (message.action === 'ws_connected') {
+        console.log("🟢 WebSocket connected, initializing HUD and recording...");
         createHUD();
         startRecording();
         
         // Setup MutationObserver to track DOM changes
         if (!mutationObserver) {
+            console.log("👁️ Setting up MutationObserver...");
             mutationObserver = new MutationObserver(() => {
                 domDirty = true;
             });
@@ -255,26 +258,34 @@ async function checkPermissions() {
 }
 
 async function startRecording() {
+    console.log("🎙️ startRecording() called");
     const hasPermission = await checkPermissions();
     if (!hasPermission) {
+        console.warn("🚫 Microphone permission denied or blocked");
         chrome.runtime.sendMessage({ action: 'stop_session' });
         return;
     }
 
     try {
+        console.log("🎤 Requesting microphone access...");
         audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        audioInputContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
-        
-        // Resume context (browsers often start it in 'suspended' state)
-        await audioInputContext.resume();
+        console.log("✅ Microphone access granted");
 
-        // Load AudioWorklet from string using Blob
+        audioInputContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+        console.log(`🔊 AudioContext created, state: ${audioInputContext.state}`);
+        
+        await audioInputContext.resume();
+        console.log(`🔊 AudioContext resumed, state: ${audioInputContext.state}`);
+
+        console.log("📦 Creating AudioWorklet module...");
         const blob = new Blob([workletCode], { type: 'application/javascript' });
         const url = URL.createObjectURL(blob);
         await audioInputContext.audioWorklet.addModule(url);
+        console.log("✅ AudioWorklet module added");
         
         const source = audioInputContext.createMediaStreamSource(audioStream);
         workletNode = new AudioWorkletNode(audioInputContext, 'recorder-processor');
+        console.log("✅ AudioWorkletNode created");
         
         let chunkCount = 0;
         workletNode.port.onmessage = (event) => {
