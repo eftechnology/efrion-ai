@@ -230,14 +230,17 @@ async def websocket_endpoint(websocket: WebSocket):
                         # 1. Handle Transcriptions and Audio
                         if server_content is not None:
                             if getattr(server_content, 'interrupted', False):
-                                print("⚠️ User interrupted the model!")
+                                print(f"⚠️ User interrupted the model! (turn_complete={server_content.turn_complete})")
                                 await websocket.send_json({"type": "command", "command": "stop_audio"})
                                 
-                            # Debug: Print Model Transcriptions
+                            # Debug: Print Model Transcriptions and Audio
                             if server_content.model_turn:
                                 for part in server_content.model_turn.parts:
+                                    if part.text:
+                                        print(f"🤖 Gemini says: {part.text}")
                                     if part.inline_data:
-                                        print(f"📤 Gemini -> Backend: Audio Chunk ({len(part.inline_data.data)} bytes)")
+                                        data_len = len(part.inline_data.data)
+                                        print(f"📤 Gemini -> Backend: Audio Chunk ({data_len} bytes)")
                                         audio_data = part.inline_data.data
                                         if isinstance(audio_data, bytes):
                                             audio_data = base64.b64encode(audio_data).decode('utf-8')
@@ -271,6 +274,8 @@ async def websocket_endpoint(websocket: WebSocket):
                     import traceback
                     print(f"❌ Error receiving from Gemini: {e}")
                     traceback.print_exc()
+                finally:
+                    print("🏁 Gemini receiver task loop finished (generator exhausted or closed).")
 
             # Run both bidirectional communication tasks concurrently
             t1 = asyncio.create_task(receive_from_extension())
@@ -280,6 +285,25 @@ async def websocket_endpoint(websocket: WebSocket):
                 [t1, t2],
                 return_when=asyncio.FIRST_COMPLETED
             )
+            
+            for task in done:
+                if task == t1:
+                    print("🔚 Extension receiver task finished.")
+                    try:
+                        task.result()
+                    except (WebSocketDisconnect, asyncio.CancelledError):
+                        pass
+                    except Exception as e:
+                        print(f"⚠️ Extension task error: {e}")
+                elif task == t2:
+                    print("🔚 Gemini receiver task finished.")
+                    try:
+                        task.result()
+                    except asyncio.CancelledError:
+                        pass
+                    except Exception as e:
+                        print(f"⚠️ Gemini task error: {e}")
+
             print(f"🛑 Communication session ended. Tasks done: {len(done)}, pending: {len(pending)}")
             for task in pending:
                 task.cancel()
