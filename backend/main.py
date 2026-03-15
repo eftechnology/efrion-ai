@@ -170,7 +170,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                 
                                 await gemini_session.send(input=types.LiveClientRealtimeInput(
                                     media_chunks=[types.Blob(
-                                        mime_type="audio/l16;rate=16000",
+                                        mime_type="audio/pcm;rate=16000",
                                         data=audio_bytes
                                     )]
                                 ))
