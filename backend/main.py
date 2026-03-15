@@ -146,8 +146,8 @@ async def websocket_endpoint(websocket: WebSocket):
 
     try:
         # Connect to the Gemini Live API
-        async with client.aio.live.connect(model="gemini-2.0-flash-exp", config=config) as gemini_session:
-            print("Connected to Gemini 2.0 Flash Multimodal Live API")
+        async with client.aio.live.connect(model="gemini-2.5-flash-native-audio-preview-12-2025", config=config) as gemini_session:
+            print("Connected to Gemini 2.5 Native Audio Preview Multimodal Live API")
             
             pending_tool_calls = {}
 
