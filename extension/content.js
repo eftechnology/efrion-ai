@@ -8,72 +8,76 @@ let isPushToTalkActive = false;
 // IN-PAGE HUD
 // ==============================================================================
 function createHUD() {
-    if (document.getElementById('erp-ai-hud')) return;
+    console.log("🛠️ createHUD() called");
+    if (document.getElementById('erp-ai-hud')) {
+        console.log("⚠️ HUD already exists");
+        return;
+    }
+    
     const hud = document.createElement('div');
     hud.id = 'erp-ai-hud';
     hud.style.position = 'fixed';
-    hud.style.bottom = '20px';
-    hud.style.right = '20px';
-    hud.style.padding = '10px 15px';
-    hud.style.backgroundColor = 'rgba(40, 40, 40, 0.95)';
+    hud.style.bottom = '30px';
+    hud.style.right = '30px';
+    hud.style.padding = '12px 20px';
+    hud.style.backgroundColor = '#222';
     hud.style.color = '#fff';
-    hud.style.borderRadius = '30px';
-    hud.style.fontFamily = 'Segoe UI, Tahoma, sans-serif';
+    hud.style.borderRadius = '40px';
+    hud.style.fontFamily = 'system-ui, -apple-system, sans-serif';
     hud.style.fontSize = '14px';
-    hud.style.zIndex = '9999999';
-    hud.style.boxShadow = '0 8px 32px rgba(0,0,0,0.5)';
+    hud.style.zIndex = '2147483647'; // Max possible z-index
+    hud.style.boxShadow = '0 10px 40px rgba(0,0,0,0.6)';
     hud.style.display = 'flex';
     hud.style.alignItems = 'center';
-    hud.style.gap = '12px';
-    hud.style.backdropFilter = 'blur(10px)';
-    hud.style.border = '1px solid rgba(255,255,255,0.1)';
-    hud.style.transition = 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)';
+    hud.style.gap = '15px';
+    hud.style.border = '1px solid #444';
+    hud.style.transition = 'all 0.3s ease';
     
     hud.innerHTML = `
         <div id="erp-ai-indicator" style="width: 12px; height: 12px; border-radius: 50%; background-color: #4CAF50; animation: erp-pulse-green 1.5s infinite;"></div>
-        <span id="erp-ai-status-text" style="font-weight: 500; min-width: 100px;">AI Connected</span>
+        <span id="erp-ai-status-text" style="font-weight: 600; min-width: 90px; color: #eee;">AI Online</span>
         
-        <div style="display: flex; gap: 8px; border-left: 1px solid rgba(255,255,255,0.2); padding-left: 12px;">
+        <div style="display: flex; gap: 10px; align-items: center;">
             <!-- Push-to-Talk Button -->
             <button id="erp-ai-mic-btn" title="Hold to Speak (Alt)" style="
-                background: #444;
-                border: none;
+                background: #333;
+                border: 1px solid #555;
                 color: white;
-                padding: 8px;
+                padding: 0;
                 border-radius: 50%;
                 cursor: pointer;
-                width: 38px;
-                height: 38px;
+                width: 42px;
+                height: 42px;
                 display: flex;
                 align-items: center;
                 justify-content: center;
                 outline: none;
-                transition: all 0.2s;
+                transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
             ">
-                <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+                <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
                     <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
                     <path d="M17 11c0 2.76-2.34 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
                 </svg>
             </button>
 
             <!-- Stop Session Button -->
-            <button id="erp-ai-stop-btn" title="Stop Autopilot" style="
-                background: rgba(244, 67, 54, 0.2);
-                border: none;
-                color: #f44336;
-                padding: 8px;
+            <button id="erp-ai-stop-btn" title="Exit Autopilot" style="
+                background: rgba(255, 0, 0, 0.1);
+                border: 1px solid rgba(255, 0, 0, 0.3);
+                color: #ff5555;
+                padding: 0;
                 border-radius: 50%;
                 cursor: pointer;
-                width: 38px;
-                height: 38px;
+                width: 42px;
+                height: 42px;
                 display: flex;
                 align-items: center;
                 justify-content: center;
                 outline: none;
                 transition: all 0.2s;
             ">
-                <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
-                    <path d="M6 6h12v12H6z"/>
+                <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+                    <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
                 </svg>
             </button>
         </div>
@@ -89,13 +93,13 @@ function createHUD() {
       }
       @keyframes erp-pulse-red {
         0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(244, 67, 54, 0.7); }
-        70% { transform: scale(1.1); box-shadow: 0 0 0 14px rgba(244, 67, 54, 0); }
+        70% { transform: scale(1.2); box-shadow: 0 0 0 15px rgba(244, 67, 54, 0); }
         100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(244, 67, 54, 0); }
       }
-      #erp-ai-mic-btn:hover { background: #555; }
+      #erp-ai-mic-btn:hover { background: #444; border-color: #777; transform: translateY(-2px); }
       #erp-ai-mic-btn:active { transform: scale(0.9); }
-      #erp-ai-mic-btn.active { background: #f44336; color: white; animation: erp-pulse-red 1s infinite; }
-      #erp-ai-stop-btn:hover { background: rgba(244, 67, 54, 0.4); }
+      #erp-ai-mic-btn.active { background: #f44336; border-color: #f44336; color: white; animation: erp-pulse-red 1s infinite; }
+      #erp-ai-stop-btn:hover { background: rgba(255, 0, 0, 0.3); border-color: #ff5555; transform: translateY(-2px); }
       #erp-ai-stop-btn:active { transform: scale(0.9); }
     `;
     document.head.appendChild(style);
@@ -141,9 +145,12 @@ function createHUD() {
     window.addEventListener('keyup', (e) => {
         if (e.key === 'Alt') stopPTT(e);
     });
+    
+    console.log("✅ HUD created successfully");
 }
 
 function removeHUD() {
+    console.log("🗑️ removeHUD() called");
     const hud = document.getElementById('erp-ai-hud');
     const style = document.getElementById('erp-ai-style');
     if (hud) hud.remove();
@@ -160,7 +167,7 @@ function updateHUD(status) {
         indicator.style.backgroundColor = '#f44336';
         indicator.style.animation = 'erp-pulse-red 1s infinite';
     } else if (status === 'idle') {
-        text.innerText = 'AI Connected';
+        text.innerText = 'AI Online';
         indicator.style.backgroundColor = '#4CAF50';
         indicator.style.animation = 'erp-pulse-green 1.5s infinite';
     } else if (status === 'speaking') {
