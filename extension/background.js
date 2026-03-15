@@ -39,6 +39,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
         return false; // No response needed
     } else if (message.action === 'capture_screen') {
+        if (message.skipImage) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ 
+                    type: 'image', 
+                    data: null,
+                    pageState: message.pageState 
+                }));
+            }
+            return false;
+        }
+
         chrome.tabs.captureVisibleTab(null, { format: 'jpeg', quality: 40 }, (dataUrl) => {
             if (chrome.runtime.lastError) {
                 const errMsg = chrome.runtime.lastError.message;

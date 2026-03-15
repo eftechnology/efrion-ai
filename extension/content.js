@@ -223,6 +223,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 treeToSend = cachedAccessibilityTree;
                 domDirty = false;
             }
+            
+            // Skip sending screenshots if the AI is currently speaking to avoid "interruption" restarts
+            // We still send the Accessibility Tree if it changed, as text-only input is less likely to kill the model turn
+            const isSpeaking = isPlaying || (audioQueue && audioQueue.length > 0);
+            
             const pageState = {
                 url: window.location.href,
                 title: document.title,
@@ -230,7 +235,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 accessibilityTree: treeToSend,
                 domChanged: treeToSend !== null
             };
-            safeSendMessage({ action: 'capture_screen', pageState: pageState });
+
+            if (isSpeaking) {
+                if (treeToSend) {
+                    console.log("🤐 AI is speaking, sending DOM update only (no screenshot)");
+                    safeSendMessage({ action: 'capture_screen', pageState: pageState, skipImage: true });
+                }
+            } else {
+                safeSendMessage({ action: 'capture_screen', pageState: pageState });
+            }
         }, 1500);
     } else if (message.type === 'command') {
         updateHUD('processing');
