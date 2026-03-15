@@ -162,47 +162,51 @@ async def websocket_endpoint(websocket: WebSocket):
                     try:
                         data = await websocket.receive_text()
                         message = json.loads(data)
+                        print(f"📥 Extension -> Backend: {message.get('type')}")
                         
                         if message.get("type") == "audio":
                             audio_b64 = message.get("data")
                             if audio_b64:
                                 audio_bytes = base64.b64decode(audio_b64)
-                                await gemini_session.send(input=types.LiveClientRealtimeInput(
+                                await gemini_session.send_realtime_input(
                                     media_chunks=[types.Blob(
                                         mime_type="audio/pcm;rate=16000",
                                         data=audio_bytes
                                     )]
-                                ))
+                                )
                             
                         elif message.get("type") == "image":
                             image_data = message.get("data")
                             page_state = message.get("pageState", {})
-                            input_args = {}
                             
+                            media_chunks = []
                             if image_data:
                                 if "," in image_data:
                                     image_data = image_data.split(",")[1]
                                 image_bytes = base64.b64decode(image_data)
-                                input_args["media_chunks"] = [types.Blob(mime_type="image/jpeg", data=image_bytes)]
+                                media_chunks.append(types.Blob(mime_type="image/jpeg", data=image_bytes))
 
+                            text_part = None
                             if page_state.get('domChanged'):
-                                dom_text = f"URL: {page_state.get('url')}\nTitle: {page_state.get('title')}\nAccessibility Tree:\n{json.dumps(page_state.get('accessibilityTree', []), indent=2)}"
-                                input_args["text"] = dom_text
+                                text_part = f"URL: {page_state.get('url')}\nTitle: {page_state.get('title')}\nAccessibility Tree:\n{json.dumps(page_state.get('accessibilityTree', []), indent=2)}"
 
-                            if input_args:
-                                await gemini_session.send(input=types.LiveClientRealtimeInput(**input_args))
+                            if media_chunks or text_part:
+                                await gemini_session.send_realtime_input(
+                                    media_chunks=media_chunks,
+                                    text=text_part
+                                )
                             
                         elif message.get("type") == "status":
                             print(f"📡 Extension Status: {message.get('message')} - {message.get('detail', '')}")
                             # Resolve pending tool calls
                             for tool_name, call_id in list(pending_tool_calls.items()):
-                                await gemini_session.send(input=types.LiveClientToolResponse(
+                                await gemini_session.send_tool_response(
                                     function_responses=[types.FunctionResponse(
                                         name=tool_name,
                                         id=call_id,
                                         response={"result": message.get("message"), "detail": message.get("detail", "")}
                                     )]
-                                ))
+                                )
                             pending_tool_calls.clear()
 
                     except WebSocketDisconnect:
@@ -210,6 +214,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         break
                     except Exception as e:
                         print(f"❌ Error receiving from extension: {e}")
+                        break
 
             # Task 2: Receive audio/function calls from Gemini and send to extension
             async def receive_from_gemini():
@@ -227,6 +232,7 @@ async def websocket_endpoint(websocket: WebSocket):
                             if server_content.model_turn:
                                 for part in server_content.model_turn.parts:
                                     if part.inline_data:
+                                        print(f"📤 Gemini -> Backend: Audio Chunk")
                                         audio_data = part.inline_data.data
                                         if isinstance(audio_data, bytes):
                                             audio_data = base64.b64encode(audio_data).decode('utf-8')
@@ -254,16 +260,17 @@ async def websocket_endpoint(websocket: WebSocket):
                                 command_payload.update(args)
                                 await websocket.send_json(command_payload)
 
-                except asyncio.CancelledError:
-                    pass
                 except Exception as e:
                     print(f"❌ Error receiving from Gemini: {e}")
 
             # Run both bidirectional communication tasks concurrently
-            await asyncio.gather(
-                asyncio.create_task(receive_from_extension()),
-                asyncio.create_task(receive_from_gemini())
+            done, pending = await asyncio.wait(
+                [receive_from_extension(), receive_from_gemini()],
+                return_when=asyncio.FIRST_COMPLETED
             )
+            print(f"🛑 Communication session ended. Tasks done: {len(done)}, pending: {len(pending)}")
+            for task in pending:
+                task.cancel()
 
     except Exception as e:
         print(f"❌ Gemini connection error: {e}")

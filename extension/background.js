@@ -34,6 +34,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return false; // Sync response
     } else if (message.action === 'send_audio') {
         if (ws && ws.readyState === WebSocket.OPEN) {
+            console.log('📤 Sending audio to backend');
             ws.send(JSON.stringify({ type: 'audio', data: message.data }));
         }
         return false; // No response needed
@@ -51,6 +52,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             const domChanged = message.pageState.domChanged;
             
             if (ws && ws.readyState === WebSocket.OPEN && (imageChanged || domChanged)) {
+                console.log('📤 Sending image/DOM to backend');
                 ws.send(JSON.stringify({ 
                     type: 'image', 
                     data: imageChanged ? dataUrl : null,
@@ -62,6 +64,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return false; // Async action, but we don't need to sendResponse back to content script
     } else if (message.action === 'action_completed') {
         if (ws && ws.readyState === WebSocket.OPEN) {
+            console.log('📤 Sending status to backend');
             ws.send(JSON.stringify({ 
                 type: 'status', 
                 message: "Action completed, waiting for network idle...",
