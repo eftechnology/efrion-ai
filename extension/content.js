@@ -133,6 +133,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             typeTextIntoElement(message.id, message.text);
         } else if (message.command === 'scroll_page') {
             scrollPage(message.direction);
+        } else if (message.command === 'navigate_to') {
+            navigateTo(message.url);
+        } else if (message.command === 'read_text') {
+            readText(message.query);
         }
     } else if (message.type === 'audio') {
         updateHUD('speaking');
@@ -319,6 +323,37 @@ function scrollPage(direction) {
         updateHUD('listening');
         chrome.runtime.sendMessage({ action: 'action_completed', detail: `Scrolled ${direction}` });
     }, 500);
+}
+
+function navigateTo(url) {
+    console.log(`🚀 Navigating to ${url}`);
+    // Show a quick HUD message before the page unloads
+    updateHUD('processing');
+    document.getElementById('erp-ai-status-text').innerText = `Navigating to ${url}...`;
+    
+    setTimeout(() => {
+        window.location.href = url;
+    }, 500);
+}
+
+function readText(query) {
+    let text = document.body.innerText;
+    if (query) {
+        // Find lines containing the query
+        const lines = text.split('\n');
+        const relevantLines = lines.filter(line => line.toLowerCase().includes(query.toLowerCase()));
+        text = relevantLines.join('\n') || `No text found matching "${query}"`;
+    }
+    
+    console.log(`📖 Read text: ${text.substring(0, 100)}...`);
+    
+    // Send the captured text back to the agent via the background script
+    chrome.runtime.sendMessage({ 
+        action: 'action_completed', 
+        detail: `Read text result: ${text.substring(0, 1000)}` 
+    });
+    
+    updateHUD('listening');
 }
 
 // ============================================================================

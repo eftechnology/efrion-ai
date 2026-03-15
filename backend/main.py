@@ -5,11 +5,12 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from google import genai
 from google.genai import types
+from dotenv import load_dotenv
 
 # ==============================================================================
-# 🔑 INSERT YOUR GEMINI API KEY HERE
-# You can also set it in your terminal before running: export GEMINI_API_KEY="..."
+# 🔑 LOAD ENVIRONMENT VARIABLES
 # ==============================================================================
+load_dotenv()
 os.environ["GEMINI_API_KEY"] = os.environ.get("GEMINI_API_KEY", "YOUR_GEMINI_API_KEY_HERE")
 
 app = FastAPI()
@@ -68,6 +69,27 @@ ui_tools = types.Tool(
                 },
                 required=["direction"],
             ),
+        ),
+        types.FunctionDeclaration(
+            name="navigate_to",
+            description="Navigates the browser to a specific URL (e.g., another ERP module).",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "url": types.Schema(type=types.Type.STRING, description="The full URL to navigate to."),
+                },
+                required=["url"],
+            ),
+        ),
+        types.FunctionDeclaration(
+            name="read_text",
+            description="Returns the visible text content of the entire page or a specific area.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "query": types.Schema(type=types.Type.STRING, description="Optional search term to find specific text."),
+                },
+            ),
         )
     ]
 )
@@ -77,18 +99,30 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     
     # Configure the Gemini Live API session
-    # We use gemini-2.5-flash-native-audio-preview-12-2025 for multimodal live interactions
+    # We use gemini-2.0-flash-exp for multimodal live interactions (as per latest SDK availability)
     config = types.LiveConnectConfig(
-        response_modalities=[types.LiveModality.AUDIO], # We want audio back to play to the user
+        response_modalities=["AUDIO"], # We want audio back to play to the user
         tools=[ui_tools], # Attach our function calling tools here
         system_instruction=types.Content(
             parts=[
                 types.Part.from_text(
-                    "You are an AI autopilot for a complex ERP system. "
-                    "You can see the user's screen and hear their voice commands. "
-                    "You will receive a visual screenshot AND a text-based Accessibility Tree representing the interactive elements currently visible on the screen. "
-                    "To take actions, you must cross-reference the visual UI with the Accessibility Tree to find the correct element 'id' (e.g., 'el-5'), and then call the appropriate tool (click_element or type_text). "
-                    "Always wait for confirmation that the action completed before proceeding to the next step."
+                    text=(
+                        "You are an expert AI Autopilot for an Enterprise Resource Planning (ERP) system. "
+                        "You can see the user's screen through screenshots and hear their voice commands via audio. "
+                        "You also receive a textual 'Accessibility Tree' that lists interactive elements and their IDs. "
+                        "\n\n"
+                        "### OPERATIONAL PROTOCOL:\n"
+                        "1. **Analyze First**: When the user gives a command, look at the screenshot and Accessibility Tree to find the relevant elements. "
+                        "2. **Tool Selection**: \n"
+                        "   - Use `click_element(id)` to click buttons, links, or inputs.\n"
+                        "   - Use `type_text(id, text)` to fill out forms. Always click the field first if needed.\n"
+                        "   - Use `scroll_page(direction)` if the element you need isn't visible.\n"
+                        "   - Use `navigate_to(url)` to switch between different modules if you know the destination URL.\n"
+                        "   - Use `read_text()` to extract data from the page that isn't in the Accessibility Tree (e.g., status messages, totals).\n"
+                        "3. **Feedback Loop**: Wait for a status update confirming the action was completed before making the next tool call. "
+                        "4. **Communication**: Be professional, concise, and confirm the actions you are taking over the voice channel. "
+                        "If you are unsure or need clarification, ask the user."
+                    )
                 )
             ]
         )
@@ -96,7 +130,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
     try:
         # Connect to the Gemini Live API
-        async with client.aio.live.connect(model="gemini-2.5-flash-native-audio-preview-12-2025", config=config) as gemini_session:
+        async with client.aio.live.connect(model="gemini-2.0-flash-exp", config=config) as gemini_session:
             print("Connected to Gemini 2.5 Native Audio Preview Multimodal Live API")
             
             pending_tool_calls = {}
@@ -187,25 +221,24 @@ async def websocket_endpoint(websocket: WebSocket):
                                     
                         # 2. Handle Function Calls (e.g., click_element)
                         if response.tool_call is not None:
-                            for function_call in response.tool_call.function_calls:
-                                name = function_call.name
-                                args = function_call.args
-                                
-                                if name in ["click_element", "type_text", "scroll_page"]:
-                                    print(f"Gemini requested tool call: {name}(args={args})")
-                                    
-                                    pending_tool_calls[name] = function_call.id
-                                    
-                                    # Send command to the Chrome extension to execute the UI action
-                                    command_payload = {
-                                        "type": "command",
-                                        "command": name
-                                    }
-                                    # Merge arguments into the payload
-                                    command_payload.update(args)
-                                    
-                                    await websocket.send_json(command_payload)
+                        for function_call in response.tool_call.function_calls:
+                        name = function_call.name
+                        args = function_call.args
 
+                        if name in ["click_element", "type_text", "scroll_page", "navigate_to", "read_text"]:
+                            print(f"Gemini requested tool call: {name}(args={args})")
+
+                            pending_tool_calls[name] = function_call.id
+
+                            # Send command to the Chrome extension to execute the UI action
+                            command_payload = {
+                                "type": "command",
+                                "command": name
+                            }
+                            # Merge arguments into the payload
+                            command_payload.update(args)
+
+                            await websocket.send_json(command_payload)
                 except asyncio.CancelledError:
                     pass
                 except Exception as e:
