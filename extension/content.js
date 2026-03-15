@@ -2,6 +2,7 @@ let screenCaptureInterval;
 let domDirty = true;
 let cachedAccessibilityTree = [];
 let mutationObserver = null;
+let isPushToTalkActive = false;
 
 // ==============================================================================
 // IN-PAGE HUD
@@ -14,19 +15,68 @@ function createHUD() {
     hud.style.bottom = '20px';
     hud.style.right = '20px';
     hud.style.padding = '10px 15px';
-    hud.style.backgroundColor = '#333';
+    hud.style.backgroundColor = 'rgba(40, 40, 40, 0.95)';
     hud.style.color = '#fff';
-    hud.style.borderRadius = '20px';
-    hud.style.fontFamily = 'sans-serif';
+    hud.style.borderRadius = '30px';
+    hud.style.fontFamily = 'Segoe UI, Tahoma, sans-serif';
     hud.style.fontSize = '14px';
     hud.style.zIndex = '9999999';
-    hud.style.boxShadow = '0 4px 6px rgba(0,0,0,0.3)';
+    hud.style.boxShadow = '0 8px 32px rgba(0,0,0,0.5)';
     hud.style.display = 'flex';
     hud.style.alignItems = 'center';
-    hud.style.gap = '8px';
+    hud.style.gap = '12px';
+    hud.style.backdropFilter = 'blur(10px)';
+    hud.style.border = '1px solid rgba(255,255,255,0.1)';
+    hud.style.transition = 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)';
+    
     hud.innerHTML = `
-        <div id="erp-ai-indicator" style="width: 10px; height: 10px; border-radius: 50%; background-color: #4CAF50; animation: erp-pulse-green 1.5s infinite;"></div>
-        <span id="erp-ai-status-text">AI Listening...</span>
+        <div id="erp-ai-indicator" style="width: 12px; height: 12px; border-radius: 50%; background-color: #4CAF50; animation: erp-pulse-green 1.5s infinite;"></div>
+        <span id="erp-ai-status-text" style="font-weight: 500; min-width: 100px;">AI Connected</span>
+        
+        <div style="display: flex; gap: 8px; border-left: 1px solid rgba(255,255,255,0.2); padding-left: 12px;">
+            <!-- Push-to-Talk Button -->
+            <button id="erp-ai-mic-btn" title="Hold to Speak (Alt)" style="
+                background: #444;
+                border: none;
+                color: white;
+                padding: 8px;
+                border-radius: 50%;
+                cursor: pointer;
+                width: 38px;
+                height: 38px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                outline: none;
+                transition: all 0.2s;
+            ">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+                    <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+                    <path d="M17 11c0 2.76-2.34 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+                </svg>
+            </button>
+
+            <!-- Stop Session Button -->
+            <button id="erp-ai-stop-btn" title="Stop Autopilot" style="
+                background: rgba(244, 67, 54, 0.2);
+                border: none;
+                color: #f44336;
+                padding: 8px;
+                border-radius: 50%;
+                cursor: pointer;
+                width: 38px;
+                height: 38px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                outline: none;
+                transition: all 0.2s;
+            ">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+                    <path d="M6 6h12v12H6z"/>
+                </svg>
+            </button>
+        </div>
     `;
     
     const style = document.createElement('style');
@@ -34,17 +84,63 @@ function createHUD() {
     style.innerHTML = `
       @keyframes erp-pulse-green {
         0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.7); }
-        70% { transform: scale(1.1); box-shadow: 0 0 0 6px rgba(76, 175, 80, 0); }
+        70% { transform: scale(1.1); box-shadow: 0 0 0 10px rgba(76, 175, 80, 0); }
         100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(76, 175, 80, 0); }
       }
-      @keyframes erp-pulse-blue {
-        0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(33, 150, 243, 0.7); }
-        70% { transform: scale(1.1); box-shadow: 0 0 0 6px rgba(33, 150, 243, 0); }
-        100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(33, 150, 243, 0); }
+      @keyframes erp-pulse-red {
+        0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(244, 67, 54, 0.7); }
+        70% { transform: scale(1.1); box-shadow: 0 0 0 14px rgba(244, 67, 54, 0); }
+        100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(244, 67, 54, 0); }
       }
+      #erp-ai-mic-btn:hover { background: #555; }
+      #erp-ai-mic-btn:active { transform: scale(0.9); }
+      #erp-ai-mic-btn.active { background: #f44336; color: white; animation: erp-pulse-red 1s infinite; }
+      #erp-ai-stop-btn:hover { background: rgba(244, 67, 54, 0.4); }
+      #erp-ai-stop-btn:active { transform: scale(0.9); }
     `;
     document.head.appendChild(style);
     document.body.appendChild(hud);
+
+    const micBtn = document.getElementById('erp-ai-mic-btn');
+    const stopBtn = document.getElementById('erp-ai-stop-btn');
+    
+    // Push-to-Talk Event Listeners
+    const startPTT = (e) => {
+        if (e) e.preventDefault();
+        if (!isPushToTalkActive) {
+            isPushToTalkActive = true;
+            micBtn.classList.add('active');
+            updateHUD('listening');
+            console.log("🎤 Mic Open (PTT)");
+        }
+    };
+
+    const stopPTT = (e) => {
+        if (isPushToTalkActive) {
+            isPushToTalkActive = false;
+            micBtn.classList.remove('active');
+            updateHUD('idle');
+            console.log("🔇 Mic Closed (PTT)");
+        }
+    };
+
+    micBtn.addEventListener('mousedown', startPTT);
+    window.addEventListener('mouseup', stopPTT);
+    
+    stopBtn.addEventListener('click', () => {
+        console.log("🛑 Stopping session from HUD...");
+        chrome.runtime.sendMessage({ action: 'stop_session' });
+    });
+    
+    // Keybind: Hold 'Alt' key to speak
+    window.addEventListener('keydown', (e) => {
+        if (e.key === 'Alt' && !isPushToTalkActive) {
+            startPTT(e);
+        }
+    });
+    window.addEventListener('keyup', (e) => {
+        if (e.key === 'Alt') stopPTT(e);
+    });
 }
 
 function removeHUD() {
@@ -60,15 +156,19 @@ function updateHUD(status) {
     if (!text || !indicator) return;
 
     if (status === 'listening') {
-        text.innerText = 'AI Listening...';
+        text.innerText = 'Listening...';
+        indicator.style.backgroundColor = '#f44336';
+        indicator.style.animation = 'erp-pulse-red 1s infinite';
+    } else if (status === 'idle') {
+        text.innerText = 'AI Connected';
         indicator.style.backgroundColor = '#4CAF50';
         indicator.style.animation = 'erp-pulse-green 1.5s infinite';
     } else if (status === 'speaking') {
         text.innerText = 'AI Speaking...';
         indicator.style.backgroundColor = '#2196F3';
-        indicator.style.animation = 'erp-pulse-blue 1.5s infinite';
+        indicator.style.animation = 'none';
     } else if (status === 'processing') {
-        text.innerText = 'AI Executing Action...';
+        text.innerText = 'Executing...';
         indicator.style.backgroundColor = '#FFC107';
         indicator.style.animation = 'none';
     }
@@ -77,17 +177,13 @@ function updateHUD(status) {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     console.log(`📩 Content script received message: ${JSON.stringify(message)}`);
     if (message.action === 'ws_connected') {
-        console.log("🟢 WebSocket connected, initializing HUD and recording...");
         createHUD();
         startRecording();
         
-        // Setup MutationObserver to track DOM changes
         if (!mutationObserver) {
-            console.log("👁️ Setting up MutationObserver...");
             mutationObserver = new MutationObserver(() => {
                 domDirty = true;
             });
-            // We observe the body, ignoring our own HUD and Ghost Cursor elements
             mutationObserver.observe(document.body, { 
                 childList: true, 
                 subtree: true, 
@@ -96,7 +192,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             });
         }
         
-        // Start taking screenshots and capturing page state every 1.5 seconds
         screenCaptureInterval = setInterval(() => {
             let treeToSend = null;
             if (domDirty) {
@@ -112,10 +207,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 accessibilityTree: treeToSend,
                 domChanged: treeToSend !== null
             };
-            chrome.runtime.sendMessage({ 
-                action: 'capture_screen', 
-                pageState: pageState 
-            });
+            chrome.runtime.sendMessage({ action: 'capture_screen', pageState: pageState });
         }, 1500);
         
     } else if (message.type === 'command') {
@@ -124,11 +216,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             audioQueue = [];
             isPlaying = false;
             nextStartTime = 0;
-            console.log("🛑 Audio playback interrupted and flushed.");
             if (audioContext && audioContext.state === 'running') {
                 audioContext.suspend().then(() => audioContext.resume());
             }
-            updateHUD('listening');
+            updateHUD('idle');
         } else if (message.command === 'click_element') {
             simulateClickWithGhostCursor(message.id);
         } else if (message.command === 'type_text') {
@@ -144,7 +235,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
     } else if (message.type === 'audio') {
         updateHUD('speaking');
-        // Play the text-to-speech audio received from Gemini
         playAudio(message.data, message.mime_type);
         
     } else if (message.type === 'error') {
@@ -162,17 +252,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 });
 
-/**
- * Extracts a simplified representation of the DOM/Accessibility tree
- * focusing on interactive elements.
- */
 function getSimplifiedAccessibilityTree() {
     const interactiveElements = [];
     const elements = document.querySelectorAll('button, a, input, select, textarea, [role="button"], [tabindex]:not([tabindex="-1"])');
     
     elements.forEach((el, index) => {
         const rect = el.getBoundingClientRect();
-        // Only include elements visible in the viewport
         if (rect.width > 0 && rect.height > 0 && 
             rect.top >= 0 && rect.left >= 0 && 
             rect.bottom <= window.innerHeight && rect.right <= window.innerWidth) {
@@ -180,112 +265,57 @@ function getSimplifiedAccessibilityTree() {
             interactiveElements.push({
                 id: `el-${index}`,
                 tagName: el.tagName.toLowerCase(),
-                type: el.type || '',
                 label: el.innerText?.trim() || el.placeholder || el.getAttribute('aria-label') || '',
-                role: el.getAttribute('role') || '',
                 x: Math.round(rect.left + rect.width / 2),
-                y: Math.round(rect.top + rect.height / 2),
-                rect: {
-                    x: Math.round(rect.left),
-                    y: Math.round(rect.top),
-                    w: Math.round(rect.width),
-                    h: Math.round(rect.height)
-                }
+                y: Math.round(rect.top + rect.height / 2)
             });
-            
-            // Tag the element with a temporary ID for the AI to reference
             el.setAttribute('data-gemini-id', `el-${index}`);
         }
     });
-    
     return interactiveElements;
 }
 
 // ==============================================================================
-// AUDIO RECORDING: Captures User Voice and converts to 16kHz PCM
-// Reverted to ScriptProcessorNode for maximum compatibility with Extensions.
+// AUDIO RECORDING
 // ==============================================================================
 
 let audioInputContext;
 let audioStream;
 let processor;
 
-async function checkPermissions() {
-    try {
-        const permissionStatus = await navigator.permissions.query({ name: 'microphone' });
-        
-        if (permissionStatus.state === 'denied') {
-            alert("❌ Microphone access is BLOCKED for this site. Please click the 'Lock' icon in your browser address bar and allow 'Microphone' to use the AI Autopilot.");
-            return false;
-        }
-        
-        return true;
-    } catch (err) {
-        console.warn("Permissions API check failed:", err);
-        return true; 
-    }
-}
-
 async function startRecording() {
-    console.log("🎙️ startRecording() called");
-    const hasPermission = await checkPermissions();
-    if (!hasPermission) {
-        console.warn("🚫 Microphone permission denied or blocked");
-        chrome.runtime.sendMessage({ action: 'stop_session' });
-        return;
-    }
-
+    console.log("🎙️ Initializing Audio Pipeline...");
     try {
-        console.log("🎤 Requesting microphone access...");
         audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        console.log("✅ Microphone access granted");
-
-        // Use 16kHz mono as expected by Gemini
         audioInputContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
-        console.log(`🔊 AudioContext created, state: ${audioInputContext.state}`);
-        
-        // CRITICAL: Resume context (browsers often start it in 'suspended' state)
         await audioInputContext.resume();
-        console.log(`🔊 AudioContext resumed, state: ${audioInputContext.state}`);
 
         const source = audioInputContext.createMediaStreamSource(audioStream);
-        
-        // Use ScriptProcessorNode (deprecated but reliable for extension content scripts)
         processor = audioInputContext.createScriptProcessor(4096, 1, 1);
         
-        let chunkCount = 0;
         processor.onaudioprocess = (e) => {
+            if (!isPushToTalkActive) return;
+
             const inputData = e.inputBuffer.getChannelData(0);
             const pcmData = new Int16Array(inputData.length);
             for (let i = 0; i < inputData.length; i++) {
-                // Float32 to Int16 conversion
                 pcmData[i] = Math.max(-1, Math.min(1, inputData[i])) * 0x7FFF;
             }
             
-            // Convert to base64 using a reliable method
             const reader = new FileReader();
             reader.onloadend = () => {
                 const base64Audio = reader.result.split(',')[1];
                 chrome.runtime.sendMessage({ action: 'send_audio', data: base64Audio });
-                chunkCount++;
-                if (chunkCount % 20 === 0) {
-                    console.log(`🎤 Sent ${chunkCount} audio chunks to backend`);
-                }
             };
             reader.readAsDataURL(new Blob([pcmData.buffer]));
         };
 
         source.connect(processor);
         processor.connect(audioInputContext.destination);
-        console.log("🎤 Started recording 16kHz PCM audio via ScriptProcessorNode");
+        console.log("✅ Audio Pipeline Ready. Hold Mic Button or 'Alt' to speak.");
         
     } catch (err) {
         console.error("Error accessing microphone:", err);
-        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-            alert("❌ Microphone access denied! Please allow microphone access in your browser settings to use the AI Autopilot.");
-        } else {
-            alert(`⚠️ Error accessing microphone: ${err.message}`);
-        }
         chrome.runtime.sendMessage({ action: 'stop_session' });
     }
 }
@@ -304,17 +334,17 @@ function stopRecording() {
         audioStream.getTracks().forEach(track => track.stop());
         audioStream = null;
     }
-    console.log("⏹️ Stopped recording");
+    console.log("⏹️ Audio session closed");
 }
 
 // ==============================================================================
-// UI AUTOMATION: Executes Tools/Function Calls from Gemini
+// UI AUTOMATION
 // ==============================================================================
 
 function simulateClickWithGhostCursor(id) {
     const el = document.querySelector(`[data-gemini-id="${id}"]`);
     if (!el) {
-        console.warn(`Element with id ${id} not found.`);
+        updateHUD('idle');
         return;
     }
     
@@ -322,10 +352,9 @@ function simulateClickWithGhostCursor(id) {
     const targetX = rect.left + rect.width / 2;
     const targetY = rect.top + rect.height / 2;
     
-    // Create Ghost Cursor
     const cursor = document.createElement('div');
     cursor.style.position = 'fixed';
-    cursor.style.left = `${window.innerWidth / 2}px`; // Start from center
+    cursor.style.left = `${window.innerWidth / 2}px`;
     cursor.style.top = `${window.innerHeight / 2}px`;
     cursor.style.width = '20px';
     cursor.style.height = '20px';
@@ -337,26 +366,18 @@ function simulateClickWithGhostCursor(id) {
     cursor.style.boxShadow = '0 0 10px rgba(255, 51, 102, 0.5)';
     document.body.appendChild(cursor);
     
-    // Animate to target
     requestAnimationFrame(() => {
         cursor.style.left = `${targetX - 10}px`;
         cursor.style.top = `${targetY - 10}px`;
     });
     
-    // Simulate Click and Ripple after movement completes
     setTimeout(() => {
-        // Ripple effect
         cursor.style.transform = 'scale(2)';
         cursor.style.opacity = '0';
-        
-        // Execute real click
         el.click();
-        console.log(`🎯 Clicked element ${id}`);
-        
-        // Cleanup
         setTimeout(() => {
             cursor.remove();
-            updateHUD('listening');
+            updateHUD('idle');
             chrome.runtime.sendMessage({ action: 'action_completed', detail: `Clicked ${id}` });
         }, 300);
     }, 500);
@@ -365,119 +386,67 @@ function simulateClickWithGhostCursor(id) {
 function typeTextIntoElement(id, text) {
     const el = document.querySelector(`[data-gemini-id="${id}"]`);
     if (!el) {
-        console.warn(`Element with id ${id} not found for typing.`);
-        updateHUD('listening');
+        updateHUD('idle');
         return;
     }
-    
-    // Simulate focusing and typing
     el.focus();
     el.value = text;
-    // Dispatch events to trigger any framework bindings (e.g., React/Angular)
     el.dispatchEvent(new Event('input', { bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
-    console.log(`⌨️ Typed "${text}" into element ${id}`);
-    
     setTimeout(() => {
-        updateHUD('listening');
+        updateHUD('idle');
         chrome.runtime.sendMessage({ action: 'action_completed', detail: `Typed into ${id}` });
     }, 300);
 }
 
 function scrollPage(direction) {
     const scrollAmount = window.innerHeight * 0.8;
-    if (direction === 'down') {
-        window.scrollBy({ top: scrollAmount, behavior: 'smooth' });
-    } else {
-        window.scrollBy({ top: -scrollAmount, behavior: 'smooth' });
-    }
-    console.log(`📜 Scrolled ${direction}`);
-    
+    window.scrollBy({ top: direction === 'down' ? scrollAmount : -scrollAmount, behavior: 'smooth' });
     setTimeout(() => {
-        updateHUD('listening');
+        updateHUD('idle');
         chrome.runtime.sendMessage({ action: 'action_completed', detail: `Scrolled ${direction}` });
     }, 500);
 }
 
 function navigateTo(url) {
-    console.log(`🚀 Navigating to ${url}`);
-    // Show a quick HUD message before the page unloads
     updateHUD('processing');
-    document.getElementById('erp-ai-status-text').innerText = `Navigating to ${url}...`;
-    
-    setTimeout(() => {
-        window.location.href = url;
-    }, 500);
+    const textEl = document.getElementById('erp-ai-status-text');
+    if (textEl) textEl.innerText = `Navigating...`;
+    setTimeout(() => { window.location.href = url; }, 500);
 }
 
 function readText(query) {
     let text = document.body.innerText;
     if (query) {
-        // Find lines containing the query
-        const lines = text.split('\n');
-        const relevantLines = lines.filter(line => line.toLowerCase().includes(query.toLowerCase()));
+        const relevantLines = text.split('\n').filter(line => line.toLowerCase().includes(query.toLowerCase()));
         text = relevantLines.join('\n') || `No text found matching "${query}"`;
     }
-    
-    console.log(`📖 Read text: ${text.substring(0, 100)}...`);
-    
-    // Send the captured text back to the agent via the background script
-    chrome.runtime.sendMessage({ 
-        action: 'action_completed', 
-        detail: `Read text result: ${text.substring(0, 1000)}` 
-    });
-    
-    updateHUD('listening');
+    chrome.runtime.sendMessage({ action: 'action_completed', detail: `Read text result: ${text.substring(0, 1000)}` });
+    updateHUD('idle');
 }
 
 function highlightElement(id) {
     const el = document.querySelector(`[data-gemini-id="${id}"]`);
     if (!el) {
-        console.warn(`Element with id ${id} not found for highlighting.`);
-        updateHUD('listening');
+        updateHUD('idle');
         return;
     }
-    
-    console.log(`🔦 Highlighting element ${id}`);
-    updateHUD('processing');
-    
-    // Apply a temporary highlight style
     const originalOutline = el.style.outline;
     const originalBoxShadow = el.style.boxShadow;
-    const originalTransition = el.style.transition;
-    
     el.style.transition = 'all 0.3s ease-in-out';
-    el.style.outline = '5px solid #FFD700'; // Yellow/Gold
+    el.style.outline = '5px solid #FFD700';
     el.style.boxShadow = '0 0 20px #FFD700';
     
-    // Animate a bit
-    let scale = 1.0;
-    const pulseInterval = setInterval(() => {
-        scale = scale === 1.0 ? 1.05 : 1.0;
-        el.style.transform = `scale(${scale})`;
-    }, 400);
-
     setTimeout(() => {
-        clearInterval(pulseInterval);
-        el.style.transform = 'scale(1.0)';
-        
-        // We keep the highlight for a bit so the user can see it
-        setTimeout(() => {
-            el.style.outline = originalOutline;
-            el.style.boxShadow = originalBoxShadow;
-            el.style.transition = originalTransition;
-            
-            updateHUD('listening');
-            chrome.runtime.sendMessage({ 
-                action: 'action_completed', 
-                detail: `Highlighted ${id}. Waiting for verbal confirmation from user.` 
-            });
-        }, 2000);
-    }, 1500);
+        el.style.outline = originalOutline;
+        el.style.boxShadow = originalBoxShadow;
+        updateHUD('idle');
+        chrome.runtime.sendMessage({ action: 'action_completed', detail: `Highlighted ${id}.` });
+    }, 2000);
 }
 
 // ============================================================================
-// AUDIO PLAYBACK: Plays the Gemini Agent's voice response
+// AUDIO PLAYBACK
 // ============================================================================
 
 let audioContext;
@@ -486,88 +455,47 @@ let isPlaying = false;
 let nextStartTime = 0;
 
 function initAudioContext() {
-    if (!audioContext) {
-        audioContext = new (window.AudioContext || window.webkitAudioContext)({
-            sampleRate: 24000 // Gemini API usually returns 24kHz PCM
-        });
-    }
-    // Resume context if suspended (browser auto-play policies)
-    if (audioContext.state === 'suspended') {
-        audioContext.resume();
-    }
+    if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+    if (audioContext.state === 'suspended') audioContext.resume();
 }
 
-/**
- * Decodes base64 string to an ArrayBuffer
- */
 function base64ToArrayBuffer(base64) {
     const binaryString = window.atob(base64);
-    const len = binaryString.length;
-    const bytes = new Uint8Array(len);
-    for (let i = 0; i < len; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-    }
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
     return bytes.buffer;
 }
 
-/**
- * Handles raw PCM audio chunk playback.
- * The Gemini Live API returns raw 16-bit PCM (usually 24kHz).
- */
 function playAudio(base64Data, mimeType) {
     initAudioContext();
-    
     try {
         const arrayBuffer = base64ToArrayBuffer(base64Data);
-        // Assuming 16-bit PCM
         const int16Array = new Int16Array(arrayBuffer);
         const float32Array = new Float32Array(int16Array.length);
+        for (let i = 0; i < int16Array.length; i++) float32Array[i] = int16Array[i] / 32768.0;
         
-        // Convert 16-bit Int PCM to 32-bit Float PCM expected by Web Audio API
-        for (let i = 0; i < int16Array.length; i++) {
-            float32Array[i] = int16Array[i] / 32768.0;
-        }
-        
-        // Create an AudioBuffer
         const buffer = audioContext.createBuffer(1, float32Array.length, 24000);
         buffer.getChannelData(0).set(float32Array);
-        
-        // Queue the buffer
         audioQueue.push(buffer);
         playNextInQueue();
-        
-    } catch (e) {
-        console.error("Error decoding audio chunk:", e);
-    }
+    } catch (e) { console.error("Error decoding audio:", e); }
 }
 
 function playNextInQueue() {
-    if (audioQueue.length === 0 || (isPlaying && audioContext.currentTime < nextStartTime)) {
-        return;
-    }
-    
+    if (audioQueue.length === 0 || (isPlaying && audioContext.currentTime < nextStartTime)) return;
     isPlaying = true;
     const buffer = audioQueue.shift();
     const source = audioContext.createBufferSource();
     source.buffer = buffer;
     source.connect(audioContext.destination);
-    
-    // Calculate when this chunk should start
-    if (nextStartTime < audioContext.currentTime) {
-        nextStartTime = audioContext.currentTime;
-    }
-    
+    if (nextStartTime < audioContext.currentTime) nextStartTime = audioContext.currentTime;
     source.start(nextStartTime);
     nextStartTime += buffer.duration;
-    
     source.onended = () => {
         if (audioQueue.length === 0) {
             isPlaying = false;
-            // Reset nextStartTime so future audio doesn't have an artificial delay
             nextStartTime = 0; 
-            updateHUD('listening');
-        } else {
-            playNextInQueue();
-        }
+            updateHUD('idle');
+        } else { playNextInQueue(); }
     };
 }
