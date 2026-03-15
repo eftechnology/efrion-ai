@@ -28,8 +28,7 @@ app.add_middleware(
 client = genai.Client()
 
 # ==============================================================================
-# 🛠️ CONFIGURE FUNCTION CALLING (TOOLS) FOR GEMINI 2.0
-# Define the tools the model can call to navigate the UI.
+# 🛠️ CONFIGURE FUNCTION CALLING (TOOLS)
 # ==============================================================================
 ui_tools = types.Tool(
     function_declarations=[
@@ -111,10 +110,13 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     
     # Configure the Gemini Live API session
-    # We use gemini-2.5-flash-native-audio-preview-12-2025 for multimodal live interactions
     config = types.LiveConnectConfig(
-        response_modalities=["AUDIO"], # We want audio back to play to the user
-        tools=[ui_tools], # Attach our function calling tools here
+        response_modalities=["AUDIO"],
+        tools=[ui_tools],
+        # Enable transcription for debugging
+        generation_config=types.GenerationConfig(
+            candidate_count=1,
+        ),
         system_instruction=types.Content(
             parts=[
                 types.Part.from_text(
@@ -148,7 +150,7 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
         # Connect to the Gemini Live API
         async with client.aio.live.connect(model="gemini-2.5-flash-native-audio-preview-12-2025", config=config) as gemini_session:
-            print("Connected to Gemini 2.5 Native Audio Preview Multimodal Live API")
+            print("🟢 Connected to Gemini 2.5 Live API")
             
             pending_tool_calls = {}
 
@@ -160,14 +162,9 @@ async def websocket_endpoint(websocket: WebSocket):
                         message = json.loads(data)
                         
                         if message.get("type") == "audio":
-                            # The extension now sends raw PCM 16kHz mono audio (base64)
                             audio_b64 = message.get("data")
                             if audio_b64:
                                 audio_bytes = base64.b64decode(audio_b64)
-                                # Print audio chunk reception every 2 seconds roughly
-                                if int(asyncio.get_event_loop().time()) % 2 == 0:
-                                    print(f"🎤 Receiving audio from extension ({len(audio_bytes)} bytes)...")
-                                
                                 await gemini_session.send(input=types.LiveClientRealtimeInput(
                                     media_chunks=[types.Blob(
                                         mime_type="audio/pcm;rate=16000",
@@ -176,35 +173,24 @@ async def websocket_endpoint(websocket: WebSocket):
                                 ))
                             
                         elif message.get("type") == "image":
-                            # Receive base64 image (screenshot) and pageState from the extension
                             image_data = message.get("data")
                             page_state = message.get("pageState", {})
-                            
                             input_args = {}
                             
                             if image_data:
                                 if "," in image_data:
-                                    image_data = image_data.split(",")[1] # Strip the data URI prefix
-                                
-                                input_args["media_chunks"] = [types.Blob(
-                                    mime_type="image/jpeg",
-                                    data=image_data
-                                )]
+                                    image_data = image_data.split(",")[1]
+                                input_args["media_chunks"] = [types.Blob(mime_type="image/jpeg", data=image_data)]
 
-                            # Only send the textual representation of the DOM if it has changed
                             if page_state.get('domChanged'):
-                                dom_text = f"URL: {page_state.get('url')}\n"
-                                dom_text += f"Title: {page_state.get('title')}\n"
-                                dom_text += f"Ready State: {page_state.get('readyState')}\n"
-                                dom_text += f"Accessibility Tree:\n{json.dumps(page_state.get('accessibilityTree', []), indent=2)}"
+                                dom_text = f"URL: {page_state.get('url')}\nTitle: {page_state.get('title')}\nAccessibility Tree:\n{json.dumps(page_state.get('accessibilityTree', []), indent=2)}"
                                 input_args["text"] = dom_text
 
-                            # Only send if we actually have something to update
                             if input_args:
                                 await gemini_session.send(input=types.LiveClientRealtimeInput(**input_args))
                             
                         elif message.get("type") == "status":
-                            print(f"Frontend Status: {message.get('message')} - {message.get('detail', '')}")
+                            print(f"📡 Extension Status: {message.get('message')} - {message.get('detail', '')}")
                             # Resolve pending tool calls
                             for tool_name, call_id in list(pending_tool_calls.items()):
                                 await gemini_session.send(input=types.LiveClientToolResponse(
@@ -217,9 +203,9 @@ async def websocket_endpoint(websocket: WebSocket):
                             pending_tool_calls.clear()
 
                 except WebSocketDisconnect:
-                    print("Extension disconnected.")
+                    print("🔴 Extension disconnected.")
                 except Exception as e:
-                    print(f"Error receiving from extension: {e}")
+                    print(f"❌ Error receiving from extension: {e}")
 
             # Task 2: Receive audio/function calls from Gemini and send to extension
             async def receive_from_gemini():
@@ -227,53 +213,47 @@ async def websocket_endpoint(websocket: WebSocket):
                     async for response in gemini_session.receive():
                         server_content = response.server_content
                         
-                        # 1. Handle Audio/Text responses from the model
+                        # 1. Handle Transcriptions and Audio
                         if server_content is not None:
-                            # Check if the user interrupted the AI
                             if getattr(server_content, 'interrupted', False):
-                                print("User interrupted the model! Flushing queues.")
+                                print("⚠️ User interrupted the model!")
                                 await websocket.send_json({"type": "command", "command": "stop_audio"})
                                 
+                            # Debug: Print Model Transcriptions
                             if server_content.model_turn:
                                 for part in server_content.model_turn.parts:
                                     if part.inline_data:
-                                        # Convert bytes to base64 if necessary
                                         audio_data = part.inline_data.data
                                         if isinstance(audio_data, bytes):
                                             audio_data = base64.b64encode(audio_data).decode('utf-8')
-                                            
-                                        # Forward the audio response back to the Chrome Extension
                                         await websocket.send_json({
                                             "type": "audio",
                                             "data": audio_data,
-                                            "mime_type": part.inline_data.mime_type # Usually audio/pcm
+                                            "mime_type": part.inline_data.mime_type
                                         })
-                                    
-                        # 2. Handle Function Calls (e.g., click_element)
+                            
+                            # Debug: Print Input/Output Transcriptions (if available)
+                            if server_content.turn_complete:
+                                # This can be used to see when a thought is finished
+                                pass
+
+                        # 2. Handle Function Calls
                         if response.tool_call is not None:
                             for function_call in response.tool_call.function_calls:
                                 name = function_call.name
                                 args = function_call.args
                                 
-                                if name in ["click_element", "type_text", "scroll_page", "navigate_to", "read_text", "highlight_element"]:
-                                    print(f"Gemini requested tool call: {name}(args={args})")
-                                    
-                                    pending_tool_calls[name] = function_call.id
-                                    
-                                    # Send command to the Chrome extension to execute the UI action
-                                    command_payload = {
-                                        "type": "command",
-                                        "command": name
-                                    }
-                                    # Merge arguments into the payload
-                                    command_payload.update(args)
-                                    
-                                    await websocket.send_json(command_payload)
+                                print(f"🤖 Gemini Tool Call: {name}({json.dumps(args)})")
+                                pending_tool_calls[name] = function_call.id
+                                
+                                command_payload = {"type": "command", "command": name}
+                                command_payload.update(args)
+                                await websocket.send_json(command_payload)
 
                 except asyncio.CancelledError:
                     pass
                 except Exception as e:
-                    print(f"Error receiving from Gemini: {e}")
+                    print(f"❌ Error receiving from Gemini: {e}")
 
             # Run both bidirectional communication tasks concurrently
             await asyncio.gather(
@@ -282,10 +262,9 @@ async def websocket_endpoint(websocket: WebSocket):
             )
 
     except Exception as e:
-        print(f"Gemini connection error: {e}")
+        print(f"❌ Gemini connection error: {e}")
         await websocket.close()
 
 if __name__ == "__main__":
     import uvicorn
-    # Start the local WebSocket server on ws://localhost:8000/ws
     uvicorn.run(app, host="0.0.0.0", port=8000)
