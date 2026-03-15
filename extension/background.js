@@ -8,9 +8,8 @@ function sendMessageToActiveTab(payload) {
     chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
         if (tabs && tabs.length > 0 && tabs[0].id) {
             chrome.tabs.sendMessage(tabs[0].id, payload, (response) => {
-                // Ignore errors about the receiving end not existing
                 if (chrome.runtime.lastError) {
-                    // console.debug("Message target not ready:", chrome.runtime.lastError.message);
+                    // Ignore errors about the receiving end not existing
                 }
             });
         }
@@ -23,6 +22,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         lastDataUrl = null;
         connectWebSocket();
         sendResponse({status: 'connecting'});
+        return false; // Sync response
     } else if (message.action === 'stop_session') {
         isIntentionalDisconnect = true;
         if (reconnectInterval) {
@@ -31,15 +31,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
         if (ws) ws.close();
         sendResponse({status: 'disconnected'});
+        return false; // Sync response
     } else if (message.action === 'send_audio') {
         if (ws && ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({ type: 'audio', data: message.data }));
         }
+        return false; // No response needed
     } else if (message.action === 'capture_screen') {
         chrome.tabs.captureVisibleTab(null, { format: 'jpeg', quality: 40 }, (dataUrl) => {
             if (chrome.runtime.lastError) {
                 const errMsg = chrome.runtime.lastError.message;
-                // Only log real errors, ignore transient "tabs cannot be edited" or permission issues
                 if (!errMsg.includes("cannot be edited") && !errMsg.includes("not in effect")) {
                     console.error("Screen capture error:", errMsg);
                 }
@@ -58,7 +59,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 lastDataUrl = dataUrl;
             }
         });
-        return true; 
+        return false; // Async action, but we don't need to sendResponse back to content script
     } else if (message.action === 'action_completed') {
         if (ws && ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({ 
@@ -67,6 +68,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 detail: message.detail
             }));
         }
+        return false;
     }
 });
 

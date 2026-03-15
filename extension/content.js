@@ -24,7 +24,13 @@ function cleanupSession() {
 
 function safeSendMessage(payload) {
     try {
-        chrome.runtime.sendMessage(payload);
+        chrome.runtime.sendMessage(payload, (response) => {
+            if (chrome.runtime.lastError) {
+                if (chrome.runtime.lastError.message.includes("Extension context invalidated")) {
+                    cleanupSession();
+                }
+            }
+        });
     } catch (err) {
         if (err.message.includes("Extension context invalidated")) {
             cleanupSession();
@@ -246,7 +252,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         safeSendMessage({ action: 'stop_session' });
     } else if (message.action === 'stop') {
         stopRecording(); removeHUD();
-        clearInterval(screenCaptureInterval);
+        if (screenCaptureInterval) clearInterval(screenCaptureInterval);
         if (mutationObserver) { mutationObserver.disconnect(); mutationObserver = null; }
     }
 });
@@ -279,14 +285,11 @@ let audioInputContext;
 let audioStream;
 let workletNode;
 
-/**
- * Robustly converts Int16Array to Base64
- */
-function int16ToBase64(int16Array) {
-    const buffer = int16Array.buffer;
-    const bytes = new Uint8Array(buffer);
+function arrayBufferToBase64(buffer) {
     let binary = '';
-    for (let i = 0; i < bytes.byteLength; i++) {
+    const bytes = new Uint8Array(buffer);
+    const len = bytes.byteLength;
+    for (let i = 0; i < len; i++) {
         binary += String.fromCharCode(bytes[i]);
     }
     return btoa(binary);
@@ -309,25 +312,20 @@ async function startRecording() {
         const source = audioInputContext.createMediaStreamSource(audioStream);
         workletNode = new AudioWorkletNode(audioInputContext, 'recorder-processor');
         
-        let chunkCount = 0;
+        let totalSentChunks = 0;
         workletNode.port.onmessage = (event) => {
             const msg = event.data;
-            
-            if (msg.type === 'worklet_started') {
-                console.log("🚀 AudioWorklet processor started");
-            } else if (msg.type === 'audio_activity') {
-                // Keep this for debugging if no audio is coming through
-                // console.debug("🔉 Audio sample amplitude:", msg.sample);
-            } else if (msg.type === 'pcm_data') {
-                if (!isPushToTalkActive) return;
-
-                const base64Audio = int16ToBase64(msg.buffer);
-                safeSendMessage({ action: 'send_audio', data: base64Audio });
-                
-                chunkCount++;
-                if (chunkCount % 20 === 0) {
-                    console.log(`🎤 Sent ${chunkCount} audio chunks to backend (PTT Active)`);
+            if (msg.type === 'pcm_data') {
+                if (isPushToTalkActive) {
+                    const base64Audio = arrayBufferToBase64(msg.buffer.buffer);
+                    safeSendMessage({ action: 'send_audio', data: base64Audio });
+                    totalSentChunks++;
+                    if (totalSentChunks % 10 === 0) {
+                        console.log(`🎤 Audio Stream: Sent ${totalSentChunks} chunks`);
+                    }
                 }
+            } else if (msg.type === 'worklet_started') {
+                console.log("🚀 Worklet processing loop started");
             }
         };
 
