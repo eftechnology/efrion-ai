@@ -48,27 +48,32 @@ function safeSendMessage(payload) {
 }
 
 // ==============================================================================
-// IN-PAGE HUD
+// IN-PAGE HUD (Isolated via Shadow DOM)
 // ==============================================================================
+let erpShadowRoot = null;
+
 function createHUD() {
     console.log("🛠️ createHUD() called");
-    if (document.getElementById('erp-ai-hud')) {
-        console.log("⚠️ HUD already exists");
-        return;
-    }
+    if (document.getElementById('erp-ai-hud-container')) return;
+    
+    const container = document.createElement('div');
+    container.id = 'erp-ai-hud-container';
+    container.style.position = 'fixed';
+    container.style.bottom = '30px';
+    container.style.right = '30px';
+    container.style.zIndex = '2147483647';
+    document.body.appendChild(container);
+    
+    erpShadowRoot = container.attachShadow({ mode: 'open' });
     
     const hud = document.createElement('div');
     hud.id = 'erp-ai-hud';
-    hud.style.position = 'fixed';
-    hud.style.bottom = '30px';
-    hud.style.right = '30px';
     hud.style.padding = '12px 20px';
     hud.style.backgroundColor = '#222';
     hud.style.color = '#fff';
     hud.style.borderRadius = '40px';
     hud.style.fontFamily = 'system-ui, -apple-system, sans-serif';
     hud.style.fontSize = '14px';
-    hud.style.zIndex = '2147483647';
     hud.style.boxShadow = '0 10px 40px rgba(0,0,0,0.6)';
     hud.style.display = 'flex';
     hud.style.alignItems = 'center';
@@ -77,31 +82,30 @@ function createHUD() {
     hud.style.transition = 'all 0.3s ease';
     
     hud.innerHTML = `
-        <div id="erp-ai-indicator" style="width: 12px; height: 12px; border-radius: 50%; background-color: #4CAF50; animation: erp-pulse-green 1.5s infinite;"></div>
+        <style>
+          @keyframes erp-pulse-green {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.7); }
+            70% { transform: scale(1.1); box-shadow: 0 0 0 10px rgba(76, 175, 80, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(76, 175, 80, 0); }
+          }
+          @keyframes erp-pulse-red {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(244, 67, 54, 0.7); }
+            70% { transform: scale(1.2); box-shadow: 0 0 0 15px rgba(244, 67, 54, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(244, 67, 54, 0); }
+          }
+          @keyframes erp-pulse-yellow {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(255, 193, 7, 0.7); }
+            70% { transform: scale(1.1); box-shadow: 0 0 0 10px rgba(255, 193, 7, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(255, 193, 7, 0); }
+          }
+          #erp-ai-stop-btn:hover { background: rgba(255, 0, 0, 0.3); border-color: #ff5555; transform: translateY(-2px); }
+          #erp-ai-stop-btn:active { transform: scale(0.9); }
+          .status-indicator { width: 12px; height: 12px; border-radius: 50%; }
+        </style>
+        <div id="erp-ai-indicator" class="status-indicator" style="background-color: #4CAF50; animation: erp-pulse-green 1.5s infinite;"></div>
         <span id="erp-ai-status-text" style="font-weight: 600; min-width: 90px; color: #eee;">AI Online</span>
         
         <div style="display: flex; gap: 10px; align-items: center;">
-            <button id="erp-ai-mic-btn" title="Hold to Speak (Alt)" style="
-                background: #333;
-                border: 1px solid #555;
-                color: white;
-                padding: 0;
-                border-radius: 50%;
-                cursor: pointer;
-                width: 42px;
-                height: 42px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                outline: none;
-                transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-            ">
-                <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
-                    <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
-                    <path d="M17 11c0 2.76-2.34 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
-                </svg>
-            </button>
-
             <button id="erp-ai-stop-btn" title="Exit Autopilot" style="
                 background: rgba(255, 0, 0, 0.1);
                 border: 1px solid rgba(255, 0, 0, 0.3);
@@ -145,98 +149,52 @@ function createHUD() {
         </div>
     `;
     
-    const style = document.createElement('style');
-    style.id = 'erp-ai-style';
-    style.innerHTML = `
-      @keyframes erp-pulse-green {
-        0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.7); }
-        70% { transform: scale(1.1); box-shadow: 0 0 0 10px rgba(76, 175, 80, 0); }
-        100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(76, 175, 80, 0); }
-      }
-      @keyframes erp-pulse-red {
-        0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(244, 67, 54, 0.7); }
-        70% { transform: scale(1.2); box-shadow: 0 0 0 15px rgba(244, 67, 54, 0); }
-        100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(244, 67, 54, 0); }
-      }
-      #erp-ai-mic-btn:hover { background: #444; border-color: #777; transform: translateY(-2px); }
-      #erp-ai-mic-btn:active { transform: scale(0.9); }
-      #erp-ai-mic-btn.active { background: #f44336; border-color: #f44336; color: white; animation: erp-pulse-red 1s infinite; }
-      #erp-ai-stop-btn:hover { background: rgba(255, 0, 0, 0.3); border-color: #ff5555; transform: translateY(-2px); }
-      #erp-ai-stop-btn:active { transform: scale(0.9); }
-    `;
-    document.head.appendChild(style);
-    document.body.appendChild(hud);
-
-    const micBtn = document.getElementById('erp-ai-mic-btn');
-    const stopBtn = document.getElementById('erp-ai-stop-btn');
+    erpShadowRoot.appendChild(hud);
     
-    const startPTT = (e) => { return; 
-        if (e) e.preventDefault();
-        if (!isPushToTalkActive) {
-            isPushToTalkActive = true;
-            micBtn.classList.add('active');
-            updateHUD('listening');
-            console.log("🎤 Mic Open (PTT)");
-        }
-    };
-
-    const stopPTT = (e) => { return; 
-        if (isPushToTalkActive) {
-            isPushToTalkActive = false;
-            micBtn.classList.remove('active');
-            updateHUD('idle');
-            console.log("🔇 Mic Closed (PTT)");
-        }
-    };
-
-    micBtn.addEventListener('mousedown', startPTT);
-    window.addEventListener('mouseup', stopPTT);
+    const stopBtn = erpShadowRoot.getElementById('erp-ai-stop-btn');
     stopBtn.addEventListener('click', () => safeSendMessage({ action: 'stop_session' }));
     
-    window.addEventListener('keydown', (e) => {
-        if (e.key === 'Alt' && !isPushToTalkActive) startPTT(e);
-    });
-    window.addEventListener('keyup', (e) => {
-        if (e.key === 'Alt') stopPTT(e);
-    });
-    console.log("✅ HUD created successfully");
+    console.log("✅ HUD created successfully in Shadow DOM");
 }
 
 function removeHUD() {
-    const hud = document.getElementById('erp-ai-hud');
-    const style = document.getElementById('erp-ai-style');
-    if (hud) hud.remove();
-    if (style) style.remove();
+    const container = document.getElementById('erp-ai-hud-container');
+    if (container) container.remove();
+    erpShadowRoot = null;
 }
 
 function updateHUD(status) {
-    const text = document.getElementById('erp-ai-status-text');
-    const indicator = document.getElementById('erp-ai-indicator');
+    if (!erpShadowRoot) return;
+    const text = erpShadowRoot.getElementById('erp-ai-status-text');
+    const indicator = erpShadowRoot.getElementById('erp-ai-indicator');
     if (!text || !indicator) return;
 
     if (status === 'listening') {
         text.innerText = 'Listening...';
         indicator.style.backgroundColor = '#f44336';
         indicator.style.animation = 'erp-pulse-red 1s infinite';
+        erpShadowRoot.getElementById('erp-ai-volume-container').style.display = 'block';
     } else if (status === 'idle') {
         text.innerText = 'AI Online';
         indicator.style.backgroundColor = '#4CAF50';
         indicator.style.animation = 'erp-pulse-green 1.5s infinite';
+        erpShadowRoot.getElementById('erp-ai-volume-container').style.display = 'block';
     } else if (status === 'speaking') {
         text.innerText = 'AI Speaking...';
         indicator.style.backgroundColor = '#2196F3';
         indicator.style.animation = 'none';
-        document.getElementById('erp-ai-volume-container').style.display = 'none';
+        erpShadowRoot.getElementById('erp-ai-volume-container').style.display = 'none';
     } else if (status === 'processing') {
-        text.innerText = 'Executing...';
+        text.innerText = 'Thinking...';
         indicator.style.backgroundColor = '#FFC107';
-        indicator.style.animation = 'none';
-        document.getElementById('erp-ai-volume-container').style.display = 'none';
+        indicator.style.animation = 'erp-pulse-yellow 1s infinite';
+        erpShadowRoot.getElementById('erp-ai-volume-container').style.display = 'none';
     }
 }
 
 function updateTranscriptHUD(source, transcript) {
-    const el = document.getElementById('erp-ai-transcript');
+    if (!erpShadowRoot) return;
+    const el = erpShadowRoot.getElementById('erp-ai-transcript');
     if (!el) return;
     const prefix = source === 'USER' ? '👤' : '🤖';
     el.innerText = `${prefix} ${transcript}`;
@@ -285,7 +243,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === 'ws_connected') {
         createHUD();
         // Set volume container visible when connected
-        const vol = document.getElementById('erp-ai-volume-container');
+        const vol = erpShadowRoot?.getElementById('erp-ai-volume-container');
         if (vol) vol.style.display = 'block';
         
         startRecording();
@@ -346,26 +304,54 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 });
 
+function generateStableId(el) {
+    const tagName = el.tagName.toLowerCase();
+    const text = (el.innerText || el.value || el.placeholder || "").trim().substring(0, 20);
+    const classes = Array.from(el.classList).slice(0, 2).join(".");
+    const parentTag = el.parentElement ? el.parentElement.tagName.toLowerCase() : "";
+    const str = `${tagName}:${text}:${classes}:${parentTag}`;
+
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        const char = str.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash |= 0;
+    }
+    return `el-${Math.abs(hash).toString(16)}`;
+}
+
 function getSimplifiedAccessibilityTree() {
     const interactiveElements = [];
-    const elements = document.querySelectorAll('button, a, input, select, textarea, [role="button"], [tabindex]:not([tabindex="-1"])');
-    elements.forEach((el, index) => {
+    const selector = 'button, a, input, select, textarea, [role="button"], [tabindex]:not([tabindex="-1"])';
+    const elements = document.querySelectorAll(selector);
+
+    // Track ID collisions to ensure uniqueness in a single turn
+    const idCounts = {};
+
+    elements.forEach((el) => {
         const rect = el.getBoundingClientRect();
-        if (rect.width > 0 && rect.height > 0 && rect.top >= 0 && rect.left >= 0 && 
-            rect.bottom <= window.innerHeight && rect.right <= window.innerWidth) {
+        const isVisible = rect.width > 0 && rect.height > 0 && 
+                         rect.top >= 0 && rect.left >= 0 &&
+                         rect.bottom <= window.innerHeight && rect.right <= window.innerWidth;
+
+        if (isVisible) {
+            let baseId = generateStableId(el);
+            idCounts[baseId] = (idCounts[baseId] || 0) + 1;
+            const finalId = idCounts[baseId] > 1 ? `${baseId}-${idCounts[baseId]}` : baseId;
+
             interactiveElements.push({
-                id: `el-${index}`,
+                id: finalId,
                 tagName: el.tagName.toLowerCase(),
-                label: el.innerText?.trim() || el.placeholder || el.getAttribute('aria-label') || '',
+                label: (el.innerText || el.getAttribute('aria-label') || el.placeholder || el.title || "").trim(),
+                role: el.getAttribute('role') || el.type || "",
                 x: Math.round(rect.left + rect.width / 2),
                 y: Math.round(rect.top + rect.height / 2)
             });
-            el.setAttribute('data-gemini-id', `el-${index}`);
+            el.setAttribute('data-gemini-id', finalId);
         }
     });
     return interactiveElements;
 }
-
 // ==============================================================================
 // AUDIO RECORDING: 16kHz PCM via AudioWorklet
 // ==============================================================================
@@ -458,7 +444,7 @@ async function startRecording() {
                     if (abs > maxVal) maxVal = abs;
                 }
                 const volumePercent = Math.min(100, (maxVal / 32768) * 100);
-                const meter = document.getElementById('erp-ai-volume-meter');
+                const meter = erpShadowRoot?.getElementById('erp-ai-volume-meter');
                 if (meter) meter.style.width = `${volumePercent}%`;
 
                 const base64Audio = arrayBufferToBase64(pcm16Buffer);
@@ -541,7 +527,7 @@ function scrollPage(direction) {
 function navigateTo(url) {
     console.log(`🚀 Navigating to: ${url}`);
     updateHUD('processing');
-    const textEl = document.getElementById('erp-ai-status-text');
+    const textEl = erpShadowRoot?.getElementById('erp-ai-status-text');
     if (textEl) textEl.innerText = `Navigating...`;
     setTimeout(() => { window.location.href = url; }, 500);
 }
