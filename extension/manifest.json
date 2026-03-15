@@ -22,5 +22,11 @@
       "matches": ["<all_urls>"],
       "js": ["content.js"]
     }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["recorder-worklet.js"],
+      "matches": ["<all_urls>"]
+    }
   ]
 }

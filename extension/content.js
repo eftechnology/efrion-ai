@@ -283,55 +283,69 @@ function getSimplifiedAccessibilityTree() {
 }
 
 // ==============================================================================
-// AUDIO RECORDING
+// AUDIO RECORDING: Captures User Voice and converts to 16kHz PCM
 // ==============================================================================
 
 let audioInputContext;
 let audioStream;
-let processor;
+let workletNode;
 
 async function startRecording() {
-    console.log("🎙️ Initializing Audio Pipeline...");
+    console.log("🎙️ startRecording() called");
     try {
         audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        console.log("✅ Microphone access granted");
+
         audioInputContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
         await audioInputContext.resume();
+        console.log(`🔊 AudioContext resumed, state: ${audioInputContext.state}`);
+
+        // Load AudioWorklet from extension package
+        try {
+            const workletUrl = chrome.runtime.getURL('recorder-worklet.js');
+            await audioInputContext.audioWorklet.addModule(workletUrl);
+            console.log("✅ AudioWorklet module loaded");
+        } catch (workletErr) {
+            console.error("❌ Failed to load AudioWorklet:", workletErr);
+            throw new Error("Could not load audio processor. Please reload the extension.");
+        }
 
         const source = audioInputContext.createMediaStreamSource(audioStream);
-        processor = audioInputContext.createScriptProcessor(4096, 1, 1);
+        workletNode = new AudioWorkletNode(audioInputContext, 'recorder-processor');
         
-        processor.onaudioprocess = (e) => {
+        let chunkCount = 0;
+        workletNode.port.onmessage = (event) => {
             if (!isPushToTalkActive) return;
 
-            const inputData = e.inputBuffer.getChannelData(0);
-            const pcmData = new Int16Array(inputData.length);
-            for (let i = 0; i < inputData.length; i++) {
-                pcmData[i] = Math.max(-1, Math.min(1, inputData[i])) * 0x7FFF;
-            }
+            const pcmBuffer = event.data; // Int16Array from worklet
             
             const reader = new FileReader();
             reader.onloadend = () => {
                 const base64Audio = reader.result.split(',')[1];
                 chrome.runtime.sendMessage({ action: 'send_audio', data: base64Audio });
+                chunkCount++;
+                if (chunkCount % 20 === 0) {
+                    console.log(`🎤 Sent ${chunkCount} audio chunks to backend`);
+                }
             };
-            reader.readAsDataURL(new Blob([pcmData.buffer]));
+            reader.readAsDataURL(new Blob([pcmBuffer.buffer]));
         };
 
-        source.connect(processor);
-        processor.connect(audioInputContext.destination);
-        console.log("✅ Audio Pipeline Ready. Hold Mic Button or 'Alt' to speak.");
+        source.connect(workletNode);
+        workletNode.connect(audioInputContext.destination);
+        console.log("🎤 Started recording 16kHz PCM audio via AudioWorkletNode");
         
     } catch (err) {
         console.error("Error accessing microphone:", err);
+        alert(`⚠️ Audio Error: ${err.message}`);
         chrome.runtime.sendMessage({ action: 'stop_session' });
     }
 }
 
 function stopRecording() {
-    if (processor) {
-        processor.disconnect();
-        processor.onaudioprocess = null;
-        processor = null;
+    if (workletNode) {
+        workletNode.disconnect();
+        workletNode = null;
     }
     if (audioInputContext) {
         audioInputContext.close();
