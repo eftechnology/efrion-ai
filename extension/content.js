@@ -137,6 +137,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             navigateTo(message.url);
         } else if (message.command === 'read_text') {
             readText(message.query);
+        } else if (message.command === 'highlight_element') {
+            highlightElement(message.id);
         }
     } else if (message.type === 'audio') {
         updateHUD('speaking');
@@ -354,6 +356,52 @@ function readText(query) {
     });
     
     updateHUD('listening');
+}
+
+function highlightElement(id) {
+    const el = document.querySelector(`[data-gemini-id="${id}"]`);
+    if (!el) {
+        console.warn(`Element with id ${id} not found for highlighting.`);
+        updateHUD('listening');
+        return;
+    }
+    
+    console.log(`🔦 Highlighting element ${id}`);
+    updateHUD('processing');
+    
+    // Apply a temporary highlight style
+    const originalOutline = el.style.outline;
+    const originalBoxShadow = el.style.boxShadow;
+    const originalTransition = el.style.transition;
+    
+    el.style.transition = 'all 0.3s ease-in-out';
+    el.style.outline = '5px solid #FFD700'; // Yellow/Gold
+    el.style.boxShadow = '0 0 20px #FFD700';
+    
+    // Animate a bit
+    let scale = 1.0;
+    const pulseInterval = setInterval(() => {
+        scale = scale === 1.0 ? 1.05 : 1.0;
+        el.style.transform = `scale(${scale})`;
+    }, 400);
+
+    setTimeout(() => {
+        clearInterval(pulseInterval);
+        el.style.transform = 'scale(1.0)';
+        
+        // We keep the highlight for a bit so the user can see it
+        setTimeout(() => {
+            el.style.outline = originalOutline;
+            el.style.boxShadow = originalBoxShadow;
+            el.style.transition = originalTransition;
+            
+            updateHUD('listening');
+            chrome.runtime.sendMessage({ 
+                action: 'action_completed', 
+                detail: `Highlighted ${id}. Waiting for verbal confirmation from user.` 
+            });
+        }, 2000);
+    }, 1500);
 }
 
 // ============================================================================

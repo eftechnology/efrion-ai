@@ -90,17 +90,28 @@ ui_tools = types.Tool(
                     "query": types.Schema(type=types.Type.STRING, description="Optional search term to find specific text."),
                 },
             ),
+        ),
+        types.FunctionDeclaration(
+            name="highlight_element",
+            description="Visually highlights an element on the screen. Use this before critical actions to confirm with the user.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "id": types.Schema(type=types.Type.STRING, description="The ID of the element to highlight."),
+                },
+                required=["id"],
+            ),
         )
-    ]
-)
+        ]
+        )
 
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    await websocket.accept()
-    
-    # Configure the Gemini Live API session
-    # We use gemini-2.0-flash-exp for multimodal live interactions (as per latest SDK availability)
-    config = types.LiveConnectConfig(
+        @app.websocket("/ws")
+        async def websocket_endpoint(websocket: WebSocket):
+        await websocket.accept()
+
+        # Configure the Gemini Live API session
+        # We use gemini-2.0-flash-exp for multimodal live interactions (as per latest SDK availability)
+        config = types.LiveConnectConfig(
         response_modalities=["AUDIO"], # We want audio back to play to the user
         tools=[ui_tools], # Attach our function calling tools here
         system_instruction=types.Content(
@@ -113,26 +124,31 @@ async def websocket_endpoint(websocket: WebSocket):
                         "\n\n"
                         "### OPERATIONAL PROTOCOL:\n"
                         "1. **Analyze First**: When the user gives a command, look at the screenshot and Accessibility Tree to find the relevant elements. "
-                        "2. **Tool Selection**: \n"
+                        "2. **Safety & Confirmation (MANDATORY)**: \n"
+                        "   - For any CRITICAL action (e.g., clicking 'Submit', 'Delete', 'Pay', 'Confirm', 'Save Changes'), you MUST NOT execute the click immediately.\n"
+                        "   - First, call `highlight_element(id)` to show the user what you intend to do.\n"
+                        "   - Verbally ask: 'I am about to [action] on [element], should I proceed?'\n"
+                        "   - ONLY call `click_element(id)` after the user gives verbal approval ('Yes', 'Proceed', 'Go ahead').\n"
+                        "3. **Tool Selection**: \n"
                         "   - Use `click_element(id)` to click buttons, links, or inputs.\n"
                         "   - Use `type_text(id, text)` to fill out forms. Always click the field first if needed.\n"
                         "   - Use `scroll_page(direction)` if the element you need isn't visible.\n"
                         "   - Use `navigate_to(url)` to switch between different modules if you know the destination URL.\n"
-                        "   - Use `read_text()` to extract data from the page that isn't in the Accessibility Tree (e.g., status messages, totals).\n"
-                        "3. **Feedback Loop**: Wait for a status update confirming the action was completed before making the next tool call. "
-                        "4. **Communication**: Be professional, concise, and confirm the actions you are taking over the voice channel. "
+                        "   - Use `read_text()` to extract data from the page that isn't in the Accessibility Tree.\n"
+                        "4. **Feedback Loop**: Wait for a status update confirming the action was completed before making the next tool call. "
+                        "5. **Communication**: Be professional, concise, and confirm the actions you are taking over the voice channel. "
                         "If you are unsure or need clarification, ask the user."
                     )
                 )
             ]
         )
-    )
+        )
 
-    try:
+        try:
         # Connect to the Gemini Live API
         async with client.aio.live.connect(model="gemini-2.0-flash-exp", config=config) as gemini_session:
             print("Connected to Gemini 2.5 Native Audio Preview Multimodal Live API")
-            
+
             pending_tool_calls = {}
 
             # Task 1: Receive audio/images/status from extension and forward to Gemini
@@ -141,7 +157,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     while True:
                         data = await websocket.receive_text()
                         message = json.loads(data)
-                        
+
                         if message.get("type") == "audio":
                             # Note: The extension sends audio/webm. For production, you may need
                             # to decode this into raw PCM 16kHz for Gemini, depending on SDK strictness.
@@ -152,18 +168,18 @@ async def websocket_endpoint(websocket: WebSocket):
                                     data=audio_data
                                 )]
                             ))
-                            
+
                         elif message.get("type") == "image":
                             # Receive base64 image (screenshot) and pageState from the extension
                             image_data = message.get("data")
                             page_state = message.get("pageState", {})
-                            
+
                             input_args = {}
-                            
+
                             if image_data:
                                 if "," in image_data:
                                     image_data = image_data.split(",")[1] # Strip the data URI prefix
-                                
+
                                 input_args["media_chunks"] = [types.Blob(
                                     mime_type="image/jpeg",
                                     data=image_data
@@ -180,7 +196,7 @@ async def websocket_endpoint(websocket: WebSocket):
                             # Only send if we actually have something to update
                             if input_args:
                                 await gemini_session.send(input=types.LiveClientRealtimeInput(**input_args))
-                            
+
                         elif message.get("type") == "status":
                             print(f"Frontend Status: {message.get('message')} - {message.get('detail', '')}")
                             # Resolve pending tool calls
@@ -204,14 +220,14 @@ async def websocket_endpoint(websocket: WebSocket):
                 try:
                     async for response in gemini_session.receive():
                         server_content = response.server_content
-                        
+
                         # 1. Handle Audio/Text responses from the model
                         if server_content is not None:
                             # Check if the user interrupted the AI
                             if getattr(server_content, 'interrupted', False):
                                 print("User interrupted the model! Flushing queues.")
                                 await websocket.send_json({"type": "command", "command": "stop_audio"})
-                                
+
                             if server_content.model_turn:
                                 for part in server_content.model_turn.parts:
                                     if part.inline_data:
@@ -221,16 +237,15 @@ async def websocket_endpoint(websocket: WebSocket):
                                             "data": part.inline_data.data, # Base64 encoded audio
                                             "mime_type": part.inline_data.mime_type # Usually audio/pcm
                                         })
-                                    
+
                         # 2. Handle Function Calls (e.g., click_element)
                         if response.tool_call is not None:
                         for function_call in response.tool_call.function_calls:
                         name = function_call.name
                         args = function_call.args
 
-                        if name in ["click_element", "type_text", "scroll_page", "navigate_to", "read_text"]:
+                        if name in ["click_element", "type_text", "scroll_page", "navigate_to", "read_text", "highlight_element"]:
                             print(f"Gemini requested tool call: {name}(args={args})")
-
                             pending_tool_calls[name] = function_call.id
 
                             # Send command to the Chrome extension to execute the UI action
