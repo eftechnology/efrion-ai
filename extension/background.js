@@ -72,6 +72,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             }));
         }
         return false;
+    } else if (message.action === 'query_status') {
+        const isConnected = ws && ws.readyState === WebSocket.OPEN;
+        sendResponse({ status: isConnected ? 'connected' : 'disconnected' });
+        if (isConnected) {
+            // Echo back to ensure the tab initializes
+            sendMessageToActiveTab({action: 'ws_connected'});
+        }
+        return true; // Keep channel open for async response
     }
 });
 
@@ -96,8 +104,8 @@ function connectWebSocket() {
         }
     };
 
-    ws.onclose = () => {
-        console.log('WebSocket disconnected');
+    ws.onclose = (event) => {
+        console.log(`WebSocket disconnected. Code: ${event.code}, Reason: ${event.reason}`);
         sendMessageToActiveTab({action: 'stop'});
         
         if (!isIntentionalDisconnect) {

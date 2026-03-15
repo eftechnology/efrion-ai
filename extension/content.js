@@ -393,11 +393,20 @@ function scrollPage(direction) {
 }
 
 function navigateTo(url) {
+    console.log(`🚀 Navigating to: ${url}`);
     updateHUD('processing');
     const textEl = document.getElementById('erp-ai-status-text');
     if (textEl) textEl.innerText = `Navigating...`;
     setTimeout(() => { window.location.href = url; }, 500);
 }
+
+// Check session status on load (for navigation/reload persistence)
+console.log("🔍 Checking session status on load...");
+chrome.runtime.sendMessage({ action: 'query_status' }, (response) => {
+    if (response && response.status === 'connected') {
+        console.log("♻️ Resuming active session...");
+    }
+});
 
 function readText(query) {
     let text = document.body.innerText;

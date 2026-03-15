@@ -218,6 +218,13 @@ async def websocket_endpoint(websocket: WebSocket):
             async def receive_from_gemini():
                 try:
                     async for response in gemini_session.receive():
+                        # Log response structure for debugging (minus audio data)
+                        if response.server_content:
+                            content = response.server_content
+                            print(f"📤 Gemini -> Backend: server_content (interrupted={getattr(content, 'interrupted', False)}, turn_complete={content.turn_complete})")
+                        if response.tool_call:
+                            print(f"📤 Gemini -> Backend: tool_call ({[fc.name for fc in response.tool_call.function_calls]})")
+
                         server_content = response.server_content
                         
                         # 1. Handle Transcriptions and Audio
@@ -230,7 +237,7 @@ async def websocket_endpoint(websocket: WebSocket):
                             if server_content.model_turn:
                                 for part in server_content.model_turn.parts:
                                     if part.inline_data:
-                                        print(f"📤 Gemini -> Backend: Audio Chunk")
+                                        print(f"📤 Gemini -> Backend: Audio Chunk ({len(part.inline_data.data)} bytes)")
                                         audio_data = part.inline_data.data
                                         if isinstance(audio_data, bytes):
                                             audio_data = base64.b64encode(audio_data).decode('utf-8')
@@ -258,8 +265,12 @@ async def websocket_endpoint(websocket: WebSocket):
                                 command_payload.update(args)
                                 await websocket.send_json(command_payload)
 
+                except asyncio.CancelledError:
+                    print("⚙️ Gemini receiver task cancelled.")
                 except Exception as e:
+                    import traceback
                     print(f"❌ Error receiving from Gemini: {e}")
+                    traceback.print_exc()
 
             # Run both bidirectional communication tasks concurrently
             t1 = asyncio.create_task(receive_from_extension())
