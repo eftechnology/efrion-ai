@@ -102,16 +102,16 @@ ui_tools = types.Tool(
                 required=["id"],
             ),
         )
-        ]
-        )
+    ]
+)
 
-        @app.websocket("/ws")
-        async def websocket_endpoint(websocket: WebSocket):
-        await websocket.accept()
-
-        # Configure the Gemini Live API session
-        # We use gemini-2.0-flash-exp for multimodal live interactions (as per latest SDK availability)
-        config = types.LiveConnectConfig(
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    
+    # Configure the Gemini Live API session
+    # We use gemini-2.0-flash-exp for multimodal live interactions (as per latest SDK availability)
+    config = types.LiveConnectConfig(
         response_modalities=["AUDIO"], # We want audio back to play to the user
         tools=[ui_tools], # Attach our function calling tools here
         system_instruction=types.Content(
@@ -142,13 +142,13 @@ ui_tools = types.Tool(
                 )
             ]
         )
-        )
+    )
 
-        try:
+    try:
         # Connect to the Gemini Live API
         async with client.aio.live.connect(model="gemini-2.0-flash-exp", config=config) as gemini_session:
-            print("Connected to Gemini 2.5 Native Audio Preview Multimodal Live API")
-
+            print("Connected to Gemini 2.0 Flash Multimodal Live API")
+            
             pending_tool_calls = {}
 
             # Task 1: Receive audio/images/status from extension and forward to Gemini
@@ -157,7 +157,7 @@ ui_tools = types.Tool(
                     while True:
                         data = await websocket.receive_text()
                         message = json.loads(data)
-
+                        
                         if message.get("type") == "audio":
                             # Note: The extension sends audio/webm. For production, you may need
                             # to decode this into raw PCM 16kHz for Gemini, depending on SDK strictness.
@@ -168,18 +168,18 @@ ui_tools = types.Tool(
                                     data=audio_data
                                 )]
                             ))
-
+                            
                         elif message.get("type") == "image":
                             # Receive base64 image (screenshot) and pageState from the extension
                             image_data = message.get("data")
                             page_state = message.get("pageState", {})
-
+                            
                             input_args = {}
-
+                            
                             if image_data:
                                 if "," in image_data:
                                     image_data = image_data.split(",")[1] # Strip the data URI prefix
-
+                                
                                 input_args["media_chunks"] = [types.Blob(
                                     mime_type="image/jpeg",
                                     data=image_data
@@ -196,7 +196,7 @@ ui_tools = types.Tool(
                             # Only send if we actually have something to update
                             if input_args:
                                 await gemini_session.send(input=types.LiveClientRealtimeInput(**input_args))
-
+                            
                         elif message.get("type") == "status":
                             print(f"Frontend Status: {message.get('message')} - {message.get('detail', '')}")
                             # Resolve pending tool calls
@@ -220,14 +220,14 @@ ui_tools = types.Tool(
                 try:
                     async for response in gemini_session.receive():
                         server_content = response.server_content
-
+                        
                         # 1. Handle Audio/Text responses from the model
                         if server_content is not None:
                             # Check if the user interrupted the AI
                             if getattr(server_content, 'interrupted', False):
                                 print("User interrupted the model! Flushing queues.")
                                 await websocket.send_json({"type": "command", "command": "stop_audio"})
-
+                                
                             if server_content.model_turn:
                                 for part in server_content.model_turn.parts:
                                     if part.inline_data:
@@ -237,26 +237,28 @@ ui_tools = types.Tool(
                                             "data": part.inline_data.data, # Base64 encoded audio
                                             "mime_type": part.inline_data.mime_type # Usually audio/pcm
                                         })
-
+                                    
                         # 2. Handle Function Calls (e.g., click_element)
                         if response.tool_call is not None:
-                        for function_call in response.tool_call.function_calls:
-                        name = function_call.name
-                        args = function_call.args
+                            for function_call in response.tool_call.function_calls:
+                                name = function_call.name
+                                args = function_call.args
+                                
+                                if name in ["click_element", "type_text", "scroll_page", "navigate_to", "read_text", "highlight_element"]:
+                                    print(f"Gemini requested tool call: {name}(args={args})")
+                                    
+                                    pending_tool_calls[name] = function_call.id
+                                    
+                                    # Send command to the Chrome extension to execute the UI action
+                                    command_payload = {
+                                        "type": "command",
+                                        "command": name
+                                    }
+                                    # Merge arguments into the payload
+                                    command_payload.update(args)
+                                    
+                                    await websocket.send_json(command_payload)
 
-                        if name in ["click_element", "type_text", "scroll_page", "navigate_to", "read_text", "highlight_element"]:
-                            print(f"Gemini requested tool call: {name}(args={args})")
-                            pending_tool_calls[name] = function_call.id
-
-                            # Send command to the Chrome extension to execute the UI action
-                            command_payload = {
-                                "type": "command",
-                                "command": name
-                            }
-                            # Merge arguments into the payload
-                            command_payload.update(args)
-
-                            await websocket.send_json(command_payload)
                 except asyncio.CancelledError:
                     pass
                 except Exception as e:
