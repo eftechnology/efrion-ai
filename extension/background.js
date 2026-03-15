@@ -3,10 +3,24 @@ let isIntentionalDisconnect = false;
 let reconnectInterval = null;
 let lastDataUrl = null;
 
+// Helper to safely send messages to the active tab's content script
+function sendMessageToActiveTab(payload) {
+    chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+        if (tabs && tabs.length > 0 && tabs[0].id) {
+            chrome.tabs.sendMessage(tabs[0].id, payload, (response) => {
+                // Ignore errors about the receiving end not existing
+                if (chrome.runtime.lastError) {
+                    // console.debug("Message target not ready:", chrome.runtime.lastError.message);
+                }
+            });
+        }
+    });
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === 'start_session') {
         isIntentionalDisconnect = false;
-        lastDataUrl = null; // Reset for new session
+        lastDataUrl = null;
         connectWebSocket();
         sendResponse({status: 'connecting'});
     } else if (message.action === 'stop_session') {
@@ -22,23 +36,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             ws.send(JSON.stringify({ type: 'audio', data: message.data }));
         }
     } else if (message.action === 'capture_screen') {
-        // Capture the visible tab and send it over WebSocket as a JPEG
         chrome.tabs.captureVisibleTab(null, { format: 'jpeg', quality: 40 }, (dataUrl) => {
             if (chrome.runtime.lastError) {
-                console.error("Screen capture error:", chrome.runtime.lastError.message);
-                // Notify the content script about the capture error
-                chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
-                    if (tabs && tabs.length > 0) {
-                        chrome.tabs.sendMessage(tabs[0].id, {
-                            type: 'error',
-                            message: "⚠️ Extension doesn't have permission to capture the screen in this tab. Please ensure you are on a valid webpage and the extension is active."
-                        });
-                    }
-                });
+                const errMsg = chrome.runtime.lastError.message;
+                // Only log real errors, ignore transient "tabs cannot be edited" or permission issues
+                if (!errMsg.includes("cannot be edited") && !errMsg.includes("not in effect")) {
+                    console.error("Screen capture error:", errMsg);
+                }
                 return;
             }
             
-            // Visual Diffing: Only send the image if it has visually changed
             const imageChanged = dataUrl !== lastDataUrl;
             const domChanged = message.pageState.domChanged;
             
@@ -54,7 +61,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return true; 
     } else if (message.action === 'action_completed') {
         if (ws && ws.readyState === WebSocket.OPEN) {
-            // Forward action completion to the backend for the closed feedback loop
             ws.send(JSON.stringify({ 
                 type: 'status', 
                 message: "Action completed, waiting for network idle...",
@@ -75,43 +81,20 @@ function connectWebSocket() {
             clearTimeout(reconnectInterval);
             reconnectInterval = null;
         }
-        // Notify the content script injected in the active tab to start recording audio
-        chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
-            if (tabs && tabs.length > 0) {
-                chrome.tabs.sendMessage(tabs[0].id, {action: 'ws_connected'});
-            }
-        });
+        sendMessageToActiveTab({action: 'ws_connected'});
     };
 
     ws.onmessage = async (event) => {
         const msg = JSON.parse(event.data);
-        
-        if (msg.type === 'command') {
-            // Forward UI commands (e.g., highlight_element) to the content script
-            chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
-                if (tabs && tabs.length > 0) {
-                    chrome.tabs.sendMessage(tabs[0].id, msg);
-                }
-            });
-        } else if (msg.type === 'audio') {
-            // Forward AI voice responses to the content script for playback
-            chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
-                if (tabs && tabs.length > 0) {
-                    chrome.tabs.sendMessage(tabs[0].id, msg);
-                }
-            });
+        if (msg.type === 'command' || msg.type === 'audio') {
+            sendMessageToActiveTab(msg);
         }
     };
 
     ws.onclose = () => {
         console.log('WebSocket disconnected');
-        chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
-            if (tabs && tabs.length > 0) {
-                chrome.tabs.sendMessage(tabs[0].id, {action: 'stop'});
-            }
-        });
+        sendMessageToActiveTab({action: 'stop'});
         
-        // Attempt to reconnect if it wasn't a manual stop
         if (!isIntentionalDisconnect) {
             console.log('Attempting to reconnect in 3 seconds...');
             reconnectInterval = setTimeout(connectWebSocket, 3000);
@@ -120,6 +103,5 @@ function connectWebSocket() {
     
     ws.onerror = (error) => {
         console.error('WebSocket Error:', error);
-        // Will trigger onclose naturally
     };
 }
