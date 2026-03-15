@@ -249,32 +249,37 @@ async def websocket_endpoint(websocket: WebSocket):
             # Task 2: Receive audio/function calls from Gemini and send to extension
             async def receive_from_gemini():
                 try:
-                    async for response in gemini_session.receive():
-                        # Handle Transcriptions, Interruptions, and Audio
-                        server_content = response.server_content
-                        if server_content is not None:
-                            if getattr(server_content, 'interrupted', False):
-                                await websocket.send_json({"type": "command", "command": "stop_audio"})
-                            
-                            if server_content.input_transcription and server_content.input_transcription.text:
-                                await websocket.send_json({"type": "transcription", "source": "USER", "text": server_content.input_transcription.text})
-
-                            if server_content.output_transcription and server_content.output_transcription.text:
-                                await websocket.send_json({"type": "transcription", "source": "MODEL", "text": server_content.output_transcription.text})
+                    while True:
+                        async for response in gemini_session.receive():
+                            # Handle Transcriptions, Interruptions, and Audio
+                            server_content = response.server_content
+                            if server_content is not None:
+                                if getattr(server_content, 'interrupted', False):
+                                    await websocket.send_json({"type": "command", "command": "stop_audio"})
                                 
-                            if server_content.model_turn:
-                                for part in server_content.model_turn.parts:
-                                    if part.inline_data:
-                                        audio_data = base64.b64encode(part.inline_data.data).decode('utf-8')
-                                        await websocket.send_json({"type": "audio", "data": audio_data, "mime_type": part.inline_data.mime_type})
+                                if server_content.input_transcription and server_content.input_transcription.text:
+                                    await websocket.send_json({"type": "transcription", "source": "USER", "text": server_content.input_transcription.text})
 
-                        # Handle Function Calls
-                        if response.tool_call is not None:
-                            for function_call in response.tool_call.function_calls:
-                                pending_tool_calls[function_call.id] = function_call.name
-                                command_payload = {"type": "command", "command": function_call.name}
-                                command_payload.update(function_call.args)
-                                await websocket.send_json(command_payload)
+                                if server_content.output_transcription and server_content.output_transcription.text:
+                                    await websocket.send_json({"type": "transcription", "source": "MODEL", "text": server_content.output_transcription.text})
+                                    
+                                if server_content.model_turn:
+                                    for part in server_content.model_turn.parts:
+                                        if part.inline_data:
+                                            audio_data = base64.b64encode(part.inline_data.data).decode('utf-8')
+                                            await websocket.send_json({"type": "audio", "data": audio_data, "mime_type": part.inline_data.mime_type})
+
+                            # Handle Function Calls
+                            if response.tool_call is not None:
+                                for function_call in response.tool_call.function_calls:
+                                    pending_tool_calls[function_call.id] = function_call.name
+                                    command_payload = {"type": "command", "command": function_call.name}
+                                    command_payload.update(function_call.args)
+                                    await websocket.send_json(command_payload)
+                        
+                        # If we reach here, the generator finished normally (e.g. turn boundary)
+                        # We wait a tiny bit and continue to keep the session alive
+                        await asyncio.sleep(0.1)
                 except asyncio.CancelledError:
                     pass
                 except Exception as e:

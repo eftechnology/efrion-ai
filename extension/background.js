@@ -128,7 +128,8 @@ function connectWebSocket() {
 
     ws.onmessage = async (event) => {
         const msg = JSON.parse(event.data);
-        if (msg.type === 'command' || msg.type === 'audio') {
+        // Forward all relevant communication types to the UI
+        if (msg.type === 'command' || msg.type === 'audio' || msg.type === 'transcription' || msg.type === 'error') {
             sendMessageToActiveTab(msg);
         }
     };
