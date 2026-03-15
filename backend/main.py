@@ -156,8 +156,8 @@ async def websocket_endpoint(websocket: WebSocket):
 
             # Task 1: Receive audio/images/status from extension and forward to Gemini
             async def receive_from_extension():
-                try:
-                    while True:
+                while True:
+                    try:
                         data = await websocket.receive_text()
                         message = json.loads(data)
                         
@@ -180,7 +180,8 @@ async def websocket_endpoint(websocket: WebSocket):
                             if image_data:
                                 if "," in image_data:
                                     image_data = image_data.split(",")[1]
-                                input_args["media_chunks"] = [types.Blob(mime_type="image/jpeg", data=image_data)]
+                                image_bytes = base64.b64decode(image_data)
+                                input_args["media_chunks"] = [types.Blob(mime_type="image/jpeg", data=image_bytes)]
 
                             if page_state.get('domChanged'):
                                 dom_text = f"URL: {page_state.get('url')}\nTitle: {page_state.get('title')}\nAccessibility Tree:\n{json.dumps(page_state.get('accessibilityTree', []), indent=2)}"
@@ -202,10 +203,11 @@ async def websocket_endpoint(websocket: WebSocket):
                                 ))
                             pending_tool_calls.clear()
 
-                except WebSocketDisconnect:
-                    print("🔴 Extension disconnected.")
-                except Exception as e:
-                    print(f"❌ Error receiving from extension: {e}")
+                    except WebSocketDisconnect:
+                        print("🔴 Extension disconnected.")
+                        break
+                    except Exception as e:
+                        print(f"❌ Error receiving from extension: {e}")
 
             # Task 2: Receive audio/function calls from Gemini and send to extension
             async def receive_from_gemini():
