@@ -304,12 +304,13 @@ async def websocket_endpoint(websocket: WebSocket):
                             print(f"⚠️ Extension task error: {e}")
                     elif task == t2:
                         print("🔚 Gemini receiver task finished.")
-                        try:
-                            # If t2 finished normally (not cancelled), we might want to restart it
-                            # unless exit_logic_triggered is set by extension.
-                            task.result()
-                            print("🔄 Gemini receiver exhausted normally. Recreating task...")
-                            t2 = asyncio.create_task(receive_from_gemini())
+                             # If t2 finished normally (not cancelled), we might want to restart it
+                             # unless exit_logic_triggered is set by extension.
+                             task.result()
+                             print("🔄 Gemini receiver exhausted normally. Waiting before recreation...")
+                             await asyncio.sleep(0.5) # Prevent busy loop CPU spike
+                             print("🔄 Recreating Gemini receiver task...")
+                             t2 = asyncio.create_task(receive_from_gemini())
                         except asyncio.CancelledError:
                             pass
                         except Exception as e:

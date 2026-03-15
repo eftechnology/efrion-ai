@@ -50,13 +50,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             return false;
         }
 
-        chrome.tabs.captureVisibleTab(null, { format: 'jpeg', quality: 40 }, (dataUrl) => {
-            if (chrome.runtime.lastError) {
-                const errMsg = chrome.runtime.lastError.message;
-                if (!errMsg.includes("cannot be edited") && !errMsg.includes("not in effect")) {
-                    console.error("Screen capture error:", errMsg);
-                }
-                return;
             }
             
             const imageChanged = dataUrl !== lastDataUrl;

@@ -223,30 +223,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 treeToSend = cachedAccessibilityTree;
                 domDirty = false;
             }
-            
-            // Skip sending screenshots/DOM updates if the AI is currently speaking to avoid "interruption" restarts.
+        screenCaptureIntervalId = setInterval(() => {
+            // 1. Skip sending screenshots/DOM updates if the AI is currently speaking to avoid "interruption" restarts.
             // Any message sent during model output closes the Gemini generator.
-            const isSpeaking = isPlaying || (audioQueue && audioQueue.length > 0);
-            
-            if (isSpeaking) {
-                // Total silence during AI speech
+            if (isPlaying) {
+                console.log('🤐 AI is speaking, sending DOM update only (no screenshot)');
+                captureAndSend(true); // DOM only
                 return;
             }
 
-            const pageState = {
-                url: window.location.href,
-                title: document.title,
-                readyState: document.readyState,
-                accessibilityTree: treeToSend,
-                domChanged: treeToSend !== null
-            };
+            // 2. Post-speech cooldown check
+            const now = Date.now();
+            if (now - lastSpeechEndTime < POST_SPEECH_COOLDOWN_MS) {
+                const remaining = Math.ceil((POST_SPEECH_COOLDOWN_MS - (now - lastSpeechEndTime)) / 1000);
+                console.log(`⏳ Post-speech cooldown active (${remaining}s remaining)...`);
+                return;
+            }
 
-            safeSendMessage({ action: 'capture_screen', pageState: pageState });
-        }, 1500);
+            captureAndSend();
+        }, screenCaptureInterval); // Use the global screenCaptureInterval variable
     } else if (message.type === 'command') {
         updateHUD('processing');
         if (message.command === 'stop_audio') {
-            audioQueue = []; isPlaying = false; nextStartTime = 0;
+            audioQueue = []; nextStartTime = 0;
             if (audioContext && audioContext.state === 'running') audioContext.suspend().then(() => audioContext.resume());
             updateHUD('idle');
         } else if (message.command === 'click_element') simulateClickWithGhostCursor(message.id);
@@ -256,15 +255,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         else if (message.command === 'read_text') readText(message.query);
         else if (message.command === 'highlight_element') highlightElement(message.id);
     } else if (message.type === 'audio') {
-        updateHUD('speaking');
         playAudio(message.data, message.mime_type);
     } else if (message.type === 'error') {
         alert(message.message);
         safeSendMessage({ action: 'stop_session' });
     } else if (message.action === 'stop') {
         stopRecording(); removeHUD();
-        if (screenCaptureInterval) clearInterval(screenCaptureInterval);
+        if (screenCaptureIntervalId) clearInterval(screenCaptureIntervalId); // Use the renamed ID
         if (mutationObserver) { mutationObserver.disconnect(); mutationObserver = null; }
+    } else if (message.action === 'play_audio') {
+        console.log('🔊 AI started speaking');
+        isPlaying = true;
+        updateHUD('speaking');
+    } else if (message.action === 'stop_audio') {
+        console.log('🤐 AI finished speaking');
+        isPlaying = false;
+        lastSpeechEndTime = Date.now(); // Mark when speech ended
+        updateHUD('idle'); // Changed from 'listening' to 'idle' as per original logic for non-PTT
     }
 });
 
@@ -451,8 +458,15 @@ function highlightElement(id) {
 
 let audioContext;
 let audioQueue = [];
-let isPlaying = false;
+let isPlaying = false; // This variable is now managed by 'play_audio' and 'stop_audio' messages
 let nextStartTime = 0;
+
+let screenCaptureInterval = 5000; // Increased to 5s to reduce chattiness
+let isRecording = false; // Not directly used in this snippet, but added as per instruction
+let lastDomHash = ''; // Not directly used in this snippet, but added as per instruction
+let lastCaptureTime = 0; // Not directly used in this snippet, but added as per instruction
+const POST_SPEECH_COOLDOWN_MS = 5000; // Wait 5s after AI finishes speaking
+let lastSpeechEndTime = 0;
 
 function initAudioContext() {
     if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
