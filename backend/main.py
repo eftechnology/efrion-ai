@@ -186,11 +186,11 @@ async def websocket_endpoint(websocket: WebSocket):
                             if page_state.get('domChanged'):
                                 text_part = f"URL: {page_state.get('url')}\nTitle: {page_state.get('title')}\nAccessibility Tree:\n{json.dumps(page_state.get('accessibilityTree', []), indent=2)}"
 
-                            if media_blob or text_part:
-                                await gemini_session.send_realtime_input(
-                                    media=media_blob,
-                                    text=text_part
-                                )
+                            if media_blob:
+                                await gemini_session.send_realtime_input(media=media_blob)
+                            
+                            if text_part:
+                                await gemini_session.send_realtime_input(text=text_part)
                             
                         elif message.get("type") == "status":
                             print(f"📡 Extension Status: {message.get('message')} - {message.get('detail', '')}")
