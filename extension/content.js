@@ -200,11 +200,43 @@ function getSimplifiedAccessibilityTree() {
 
 // ==============================================================================
 // AUDIO RECORDING: Captures User Voice and converts to 16kHz PCM
+// Using AudioWorklet for better performance and low latency.
 // ==============================================================================
 
 let audioInputContext;
 let audioStream;
-let processor;
+let workletNode;
+
+const workletCode = `
+class RecorderProcessor extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.buffer = new Int16Array(4096);
+    this.offset = 0;
+  }
+
+  process(inputs, outputs, parameters) {
+    const input = inputs[0];
+    if (input.length > 0) {
+      const channelData = input[0]; // Mono input
+      
+      for (let i = 0; i < channelData.length; i++) {
+        // Convert Float32 to Int16
+        this.buffer[this.offset++] = Math.max(-1, Math.min(1, channelData[i])) * 0x7FFF;
+        
+        if (this.offset >= this.buffer.length) {
+          // Send the full buffer to the main thread
+          this.port.postMessage(this.buffer);
+          this.buffer = new Int16Array(4096);
+          this.offset = 0;
+        }
+      }
+    }
+    return true;
+  }
+}
+registerProcessor('recorder-processor', RecorderProcessor);
+`;
 
 async function checkPermissions() {
     try {
@@ -215,14 +247,9 @@ async function checkPermissions() {
             return false;
         }
         
-        if (permissionStatus.state === 'prompt') {
-            console.log("🎤 Microphone permission prompt will be shown to the user.");
-        }
-        
         return true;
     } catch (err) {
         console.warn("Permissions API check failed:", err);
-        // Fallback: Just try getUserMedia directly if Permissions API isn't supported
         return true; 
     }
 }
@@ -237,35 +264,38 @@ async function startRecording() {
     try {
         audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
         audioInputContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
-        const source = audioInputContext.createMediaStreamSource(audioStream);
         
-        // Use ScriptProcessorNode to get raw PCM data (16kHz mono)
-        processor = audioInputContext.createScriptProcessor(4096, 1, 1);
+        // Resume context (browsers often start it in 'suspended' state)
+        await audioInputContext.resume();
+
+        // Load AudioWorklet from string using Blob
+        const blob = new Blob([workletCode], { type: 'application/javascript' });
+        const url = URL.createObjectURL(blob);
+        await audioInputContext.audioWorklet.addModule(url);
+        
+        const source = audioInputContext.createMediaStreamSource(audioStream);
+        workletNode = new AudioWorkletNode(audioInputContext, 'recorder-processor');
         
         let chunkCount = 0;
-        processor.onaudioprocess = (e) => {
-            const inputData = e.inputBuffer.getChannelData(0);
-            const pcmData = new Int16Array(inputData.length);
-            for (let i = 0; i < inputData.length; i++) {
-                pcmData[i] = Math.max(-1, Math.min(1, inputData[i])) * 0x7FFF;
-            }
+        workletNode.port.onmessage = (event) => {
+            const pcmBuffer = event.data;
             
-            // Send binary data as base64 more robustly
+            // Encode binary PCM to base64
             const reader = new FileReader();
             reader.onloadend = () => {
                 const base64Audio = reader.result.split(',')[1];
                 chrome.runtime.sendMessage({ action: 'send_audio', data: base64Audio });
                 chunkCount++;
-                if (chunkCount % 10 === 0) {
+                if (chunkCount % 20 === 0) {
                     console.log(`🎤 Sent ${chunkCount} audio chunks to backend`);
                 }
             };
-            reader.readAsDataURL(new Blob([pcmData.buffer]));
+            reader.readAsDataURL(new Blob([pcmBuffer.buffer]));
         };
 
-        source.connect(processor);
-        processor.connect(audioInputContext.destination);
-        console.log("🎤 Started recording 16kHz PCM audio");
+        source.connect(workletNode);
+        workletNode.connect(audioInputContext.destination);
+        console.log("🎤 Started recording 16kHz PCM audio via AudioWorklet");
         
     } catch (err) {
         console.error("Error accessing microphone:", err);
@@ -279,9 +309,9 @@ async function startRecording() {
 }
 
 function stopRecording() {
-    if (processor) {
-        processor.disconnect();
-        processor = null;
+    if (workletNode) {
+        workletNode.disconnect();
+        workletNode = null;
     }
     if (audioInputContext) {
         audioInputContext.close();
