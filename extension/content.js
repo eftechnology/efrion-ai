@@ -5,6 +5,36 @@ let mutationObserver = null;
 let isPushToTalkActive = false;
 
 // ==============================================================================
+// SAFE MESSAGING & CLEANUP
+// ==============================================================================
+function cleanupSession() {
+    console.log("🧹 Cleaning up old session due to extension reload...");
+    removeHUD();
+    if (screenCaptureInterval) {
+        clearInterval(screenCaptureInterval);
+        screenCaptureInterval = null;
+    }
+    if (mutationObserver) {
+        mutationObserver.disconnect();
+        mutationObserver = null;
+    }
+    stopRecording();
+    isPushToTalkActive = false;
+}
+
+function safeSendMessage(payload) {
+    try {
+        chrome.runtime.sendMessage(payload);
+    } catch (err) {
+        if (err.message.includes("Extension context invalidated")) {
+            cleanupSession();
+        } else {
+            console.error("Failed to send message:", err);
+        }
+    }
+}
+
+// ==============================================================================
 // IN-PAGE HUD
 // ==============================================================================
 function createHUD() {
@@ -127,7 +157,7 @@ function createHUD() {
 
     micBtn.addEventListener('mousedown', startPTT);
     window.addEventListener('mouseup', stopPTT);
-    stopBtn.addEventListener('click', () => chrome.runtime.sendMessage({ action: 'stop_session' }));
+    stopBtn.addEventListener('click', () => safeSendMessage({ action: 'stop_session' }));
     
     window.addEventListener('keydown', (e) => {
         if (e.key === 'Alt' && !isPushToTalkActive) startPTT(e);
@@ -194,7 +224,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 accessibilityTree: treeToSend,
                 domChanged: treeToSend !== null
             };
-            chrome.runtime.sendMessage({ action: 'capture_screen', pageState: pageState });
+            safeSendMessage({ action: 'capture_screen', pageState: pageState });
         }, 1500);
     } else if (message.type === 'command') {
         updateHUD('processing');
@@ -213,7 +243,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         playAudio(message.data, message.mime_type);
     } else if (message.type === 'error') {
         alert(message.message);
-        chrome.runtime.sendMessage({ action: 'stop_session' });
+        safeSendMessage({ action: 'stop_session' });
     } else if (message.action === 'stop') {
         stopRecording(); removeHUD();
         clearInterval(screenCaptureInterval);
@@ -292,7 +322,7 @@ async function startRecording() {
                 if (!isPushToTalkActive) return;
 
                 const base64Audio = int16ToBase64(msg.buffer);
-                chrome.runtime.sendMessage({ action: 'send_audio', data: base64Audio });
+                safeSendMessage({ action: 'send_audio', data: base64Audio });
                 
                 chunkCount++;
                 if (chunkCount % 20 === 0) {
@@ -307,7 +337,7 @@ async function startRecording() {
         
     } catch (err) {
         console.error("❌ Audio Error:", err);
-        chrome.runtime.sendMessage({ action: 'stop_session' });
+        safeSendMessage({ action: 'stop_session' });
     }
 }
 
@@ -345,7 +375,7 @@ function simulateClickWithGhostCursor(id) {
     setTimeout(() => {
         cursor.style.transform = 'scale(2)'; cursor.style.opacity = '0';
         el.click();
-        setTimeout(() => { cursor.remove(); updateHUD('idle'); chrome.runtime.sendMessage({ action: 'action_completed', detail: `Clicked ${id}` }); }, 300);
+        setTimeout(() => { cursor.remove(); updateHUD('idle'); safeSendMessage({ action: 'action_completed', detail: `Clicked ${id}` }); }, 300);
     }, 500);
 }
 
@@ -355,13 +385,13 @@ function typeTextIntoElement(id, text) {
     el.focus(); el.value = text;
     el.dispatchEvent(new Event('input', { bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
-    setTimeout(() => { updateHUD('idle'); chrome.runtime.sendMessage({ action: 'action_completed', detail: `Typed into ${id}` }); }, 300);
+    setTimeout(() => { updateHUD('idle'); safeSendMessage({ action: 'action_completed', detail: `Typed into ${id}` }); }, 300);
 }
 
 function scrollPage(direction) {
     const scrollAmount = window.innerHeight * 0.8;
     window.scrollBy({ top: direction === 'down' ? scrollAmount : -scrollAmount, behavior: 'smooth' });
-    setTimeout(() => { updateHUD('idle'); chrome.runtime.sendMessage({ action: 'action_completed', detail: `Scrolled ${direction}` }); }, 500);
+    setTimeout(() => { updateHUD('idle'); safeSendMessage({ action: 'action_completed', detail: `Scrolled ${direction}` }); }, 500);
 }
 
 function navigateTo(url) {
@@ -377,7 +407,7 @@ function readText(query) {
         const relevantLines = text.split('\n').filter(line => line.toLowerCase().includes(query.toLowerCase()));
         text = relevantLines.join('\n') || `No text found matching "${query}"`;
     }
-    chrome.runtime.sendMessage({ action: 'action_completed', detail: `Read text result: ${text.substring(0, 1000)}` });
+    safeSendMessage({ action: 'action_completed', detail: `Read text result: ${text.substring(0, 1000)}` });
     updateHUD('idle');
 }
 
@@ -393,7 +423,7 @@ function highlightElement(id) {
         el.style.outline = originalOutline;
         el.style.boxShadow = originalBoxShadow;
         updateHUD('idle');
-        chrome.runtime.sendMessage({ action: 'action_completed', detail: `Highlighted ${id}.` });
+        safeSendMessage({ action: 'action_completed', detail: `Highlighted ${id}.` });
     }, 2000);
 }
 
