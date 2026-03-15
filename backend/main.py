@@ -162,14 +162,18 @@ async def websocket_endpoint(websocket: WebSocket):
                         if message.get("type") == "audio":
                             # The extension now sends raw PCM 16kHz mono audio (base64)
                             audio_b64 = message.get("data")
-                            audio_bytes = base64.b64decode(audio_b64)
-                            
-                            await gemini_session.send(input=types.LiveClientRealtimeInput(
-                                media_chunks=[types.Blob(
-                                    mime_type="audio/pcm;rate=16000",
-                                    data=audio_bytes
-                                )]
-                            ))
+                            if audio_b64:
+                                audio_bytes = base64.b64decode(audio_b64)
+                                # Print audio chunk reception every 2 seconds roughly
+                                if int(asyncio.get_event_loop().time()) % 2 == 0:
+                                    print(f"🎤 Receiving audio from extension ({len(audio_bytes)} bytes)...")
+                                
+                                await gemini_session.send(input=types.LiveClientRealtimeInput(
+                                    media_chunks=[types.Blob(
+                                        mime_type="audio/l16;rate=16000",
+                                        data=audio_bytes
+                                    )]
+                                ))
                             
                         elif message.get("type") == "image":
                             # Receive base64 image (screenshot) and pageState from the extension
@@ -233,10 +237,15 @@ async def websocket_endpoint(websocket: WebSocket):
                             if server_content.model_turn:
                                 for part in server_content.model_turn.parts:
                                     if part.inline_data:
+                                        # Convert bytes to base64 if necessary
+                                        audio_data = part.inline_data.data
+                                        if isinstance(audio_data, bytes):
+                                            audio_data = base64.b64encode(audio_data).decode('utf-8')
+                                            
                                         # Forward the audio response back to the Chrome Extension
                                         await websocket.send_json({
                                             "type": "audio",
-                                            "data": part.inline_data.data, # Base64 encoded audio
+                                            "data": audio_data,
                                             "mime_type": part.inline_data.mime_type # Usually audio/pcm
                                         })
                                     

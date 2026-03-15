@@ -242,17 +242,25 @@ async function startRecording() {
         // Use ScriptProcessorNode to get raw PCM data (16kHz mono)
         processor = audioInputContext.createScriptProcessor(4096, 1, 1);
         
+        let chunkCount = 0;
         processor.onaudioprocess = (e) => {
             const inputData = e.inputBuffer.getChannelData(0);
-            // Convert Float32 to Int16
             const pcmData = new Int16Array(inputData.length);
             for (let i = 0; i < inputData.length; i++) {
                 pcmData[i] = Math.max(-1, Math.min(1, inputData[i])) * 0x7FFF;
             }
             
-            // Send base64 encoded PCM data
-            const base64Audio = btoa(String.fromCharCode(...new Uint8Array(pcmData.buffer)));
-            chrome.runtime.sendMessage({ action: 'send_audio', data: base64Audio });
+            // Send binary data as base64 more robustly
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                const base64Audio = reader.result.split(',')[1];
+                chrome.runtime.sendMessage({ action: 'send_audio', data: base64Audio });
+                chunkCount++;
+                if (chunkCount % 10 === 0) {
+                    console.log(`🎤 Sent ${chunkCount} audio chunks to backend`);
+                }
+            };
+            reader.readAsDataURL(new Blob([pcmData.buffer]));
         };
 
         source.connect(processor);
