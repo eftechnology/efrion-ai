@@ -114,10 +114,6 @@ async def websocket_endpoint(websocket: WebSocket):
     config = types.LiveConnectConfig(
         response_modalities=["AUDIO"],
         tools=[ui_tools],
-        # Enable transcription for debugging
-        generation_config=types.GenerationConfig(
-            candidate_count=1,
-        ),
         system_instruction=types.Content(
             parts=[
                 types.Part.from_text(
@@ -169,30 +165,30 @@ async def websocket_endpoint(websocket: WebSocket):
                             if audio_b64:
                                 audio_bytes = base64.b64decode(audio_b64)
                                 await gemini_session.send_realtime_input(
-                                    media_chunks=[types.Blob(
+                                    audio=types.Blob(
                                         mime_type="audio/pcm;rate=16000",
                                         data=audio_bytes
-                                    )]
+                                    )
                                 )
                             
                         elif message.get("type") == "image":
                             image_data = message.get("data")
                             page_state = message.get("pageState", {})
                             
-                            media_chunks = []
+                            media_blob = None
                             if image_data:
                                 if "," in image_data:
                                     image_data = image_data.split(",")[1]
                                 image_bytes = base64.b64decode(image_data)
-                                media_chunks.append(types.Blob(mime_type="image/jpeg", data=image_bytes))
+                                media_blob = types.Blob(mime_type="image/jpeg", data=image_bytes)
 
                             text_part = None
                             if page_state.get('domChanged'):
                                 text_part = f"URL: {page_state.get('url')}\nTitle: {page_state.get('title')}\nAccessibility Tree:\n{json.dumps(page_state.get('accessibilityTree', []), indent=2)}"
 
-                            if media_chunks or text_part:
+                            if media_blob or text_part:
                                 await gemini_session.send_realtime_input(
-                                    media_chunks=media_chunks,
+                                    media=media_blob,
                                     text=text_part
                                 )
                             
@@ -213,7 +209,9 @@ async def websocket_endpoint(websocket: WebSocket):
                         print("🔴 Extension disconnected.")
                         break
                     except Exception as e:
+                        import traceback
                         print(f"❌ Error receiving from extension: {e}")
+                        traceback.print_exc()
                         break
 
             # Task 2: Receive audio/function calls from Gemini and send to extension
