@@ -1,6 +1,7 @@
 import os
 import json
 import asyncio
+import base64
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from google import genai
@@ -110,7 +111,7 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     
     # Configure the Gemini Live API session
-    # We use gemini-2.0-flash-exp for multimodal live interactions (as per latest SDK availability)
+    # We use gemini-2.5-flash-native-audio-preview-12-2025 for multimodal live interactions
     config = types.LiveConnectConfig(
         response_modalities=["AUDIO"], # We want audio back to play to the user
         tools=[ui_tools], # Attach our function calling tools here
@@ -159,13 +160,14 @@ async def websocket_endpoint(websocket: WebSocket):
                         message = json.loads(data)
                         
                         if message.get("type") == "audio":
-                            # Note: The extension sends audio/webm. For production, you may need
-                            # to decode this into raw PCM 16kHz for Gemini, depending on SDK strictness.
-                            audio_data = message.get("data")
+                            # The extension now sends raw PCM 16kHz mono audio (base64)
+                            audio_b64 = message.get("data")
+                            audio_bytes = base64.b64decode(audio_b64)
+                            
                             await gemini_session.send(input=types.LiveClientRealtimeInput(
                                 media_chunks=[types.Blob(
-                                    mime_type="audio/webm",
-                                    data=audio_data
+                                    mime_type="audio/pcm;rate=16000",
+                                    data=audio_bytes
                                 )]
                             ))
                             

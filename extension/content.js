@@ -1,4 +1,3 @@
-let mediaRecorder;
 let screenCaptureInterval;
 let domDirty = true;
 let cachedAccessibilityTree = [];
@@ -199,6 +198,14 @@ function getSimplifiedAccessibilityTree() {
     return interactiveElements;
 }
 
+// ==============================================================================
+// AUDIO RECORDING: Captures User Voice and converts to 16kHz PCM
+// ==============================================================================
+
+let audioInputContext;
+let audioStream;
+let processor;
+
 async function checkPermissions() {
     try {
         const permissionStatus = await navigator.permissions.query({ name: 'microphone' });
@@ -221,7 +228,6 @@ async function checkPermissions() {
 }
 
 async function startRecording() {
-    // Proactively check if the user has already blocked the microphone
     const hasPermission = await checkPermissions();
     if (!hasPermission) {
         chrome.runtime.sendMessage({ action: 'stop_session' });
@@ -229,22 +235,30 @@ async function startRecording() {
     }
 
     try {
-        // Request microphone access from the user within the webpage context
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+        audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioInputContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+        const source = audioInputContext.createMediaStreamSource(audioStream);
         
-        mediaRecorder.ondataavailable = async (event) => {
-            if (event.data.size > 0) {
-                // Convert audio Blob to Base64 to send via WebSocket (background.js)
-                const base64Data = await blobToBase64(event.data);
-                const base64Audio = base64Data.split(',')[1];
-                chrome.runtime.sendMessage({ action: 'send_audio', data: base64Audio });
+        // Use ScriptProcessorNode to get raw PCM data (16kHz mono)
+        processor = audioInputContext.createScriptProcessor(4096, 1, 1);
+        
+        processor.onaudioprocess = (e) => {
+            const inputData = e.inputBuffer.getChannelData(0);
+            // Convert Float32 to Int16
+            const pcmData = new Int16Array(inputData.length);
+            for (let i = 0; i < inputData.length; i++) {
+                pcmData[i] = Math.max(-1, Math.min(1, inputData[i])) * 0x7FFF;
             }
+            
+            // Send base64 encoded PCM data
+            const base64Audio = btoa(String.fromCharCode(...new Uint8Array(pcmData.buffer)));
+            chrome.runtime.sendMessage({ action: 'send_audio', data: base64Audio });
         };
 
-        // Capture and send audio in 500ms chunks for real-time streaming
-        mediaRecorder.start(500);
-        console.log("🎤 Started recording user voice");
+        source.connect(processor);
+        processor.connect(audioInputContext.destination);
+        console.log("🎤 Started recording 16kHz PCM audio");
+        
     } catch (err) {
         console.error("Error accessing microphone:", err);
         if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
@@ -257,19 +271,19 @@ async function startRecording() {
 }
 
 function stopRecording() {
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-        mediaRecorder.stop();
-        mediaRecorder.stream.getTracks().forEach(track => track.stop());
-        console.log("⏹️ Stopped recording");
+    if (processor) {
+        processor.disconnect();
+        processor = null;
     }
-}
-
-function blobToBase64(blob) {
-    return new Promise((resolve, _) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result);
-        reader.readAsDataURL(blob);
-    });
+    if (audioInputContext) {
+        audioInputContext.close();
+        audioInputContext = null;
+    }
+    if (audioStream) {
+        audioStream.getTracks().forEach(track => track.stop());
+        audioStream = null;
+    }
+    console.log("⏹️ Stopped recording");
 }
 
 // ==============================================================================
