@@ -25,7 +25,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         // Capture the visible tab and send it over WebSocket as a JPEG
         chrome.tabs.captureVisibleTab(null, { format: 'jpeg', quality: 40 }, (dataUrl) => {
             if (chrome.runtime.lastError) {
-                console.error(chrome.runtime.lastError.message);
+                console.error("Screen capture error:", chrome.runtime.lastError.message);
+                // Notify the content script about the capture error
+                chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+                    if (tabs && tabs.length > 0) {
+                        chrome.tabs.sendMessage(tabs[0].id, {
+                            type: 'error',
+                            message: "⚠️ Extension doesn't have permission to capture the screen in this tab. Please ensure you are on a valid webpage and the extension is active."
+                        });
+                    }
+                });
                 return;
             }
             

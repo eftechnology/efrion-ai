@@ -145,6 +145,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         // Play the text-to-speech audio received from Gemini
         playAudio(message.data, message.mime_type);
         
+    } else if (message.type === 'error') {
+        alert(message.message);
+        chrome.runtime.sendMessage({ action: 'stop_session' });
+
     } else if (message.action === 'stop') {
         stopRecording();
         removeHUD();
@@ -195,7 +199,35 @@ function getSimplifiedAccessibilityTree() {
     return interactiveElements;
 }
 
+async function checkPermissions() {
+    try {
+        const permissionStatus = await navigator.permissions.query({ name: 'microphone' });
+        
+        if (permissionStatus.state === 'denied') {
+            alert("❌ Microphone access is BLOCKED for this site. Please click the 'Lock' icon in your browser address bar and allow 'Microphone' to use the AI Autopilot.");
+            return false;
+        }
+        
+        if (permissionStatus.state === 'prompt') {
+            console.log("🎤 Microphone permission prompt will be shown to the user.");
+        }
+        
+        return true;
+    } catch (err) {
+        console.warn("Permissions API check failed:", err);
+        // Fallback: Just try getUserMedia directly if Permissions API isn't supported
+        return true; 
+    }
+}
+
 async function startRecording() {
+    // Proactively check if the user has already blocked the microphone
+    const hasPermission = await checkPermissions();
+    if (!hasPermission) {
+        chrome.runtime.sendMessage({ action: 'stop_session' });
+        return;
+    }
+
     try {
         // Request microphone access from the user within the webpage context
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -215,7 +247,12 @@ async function startRecording() {
         console.log("🎤 Started recording user voice");
     } catch (err) {
         console.error("Error accessing microphone:", err);
-        alert("Microphone access is required for the AI Autopilot. Please allow microphone permissions.");
+        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+            alert("❌ Microphone access denied! Please allow microphone access in your browser settings to use the AI Autopilot.");
+        } else {
+            alert(`⚠️ Error accessing microphone: ${err.message}`);
+        }
+        chrome.runtime.sendMessage({ action: 'stop_session' });
     }
 }
 
