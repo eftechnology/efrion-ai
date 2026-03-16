@@ -96,7 +96,22 @@ base_tools = [
                 "query": types.Schema(type=types.Type.STRING, description="Optional search term to find specific text."),
             },
         ),
-    )
+    ),
+    types.FunctionDeclaration(
+        name="set_plan",
+        description="Silently sets the task plan shown in the HUD overlay. Call this BEFORE starting any actions to display your plan to the user without speaking each step aloud.",
+        parameters=types.Schema(
+            type=types.Type.OBJECT,
+            properties={
+                "steps": types.Schema(
+                    type=types.Type.ARRAY,
+                    items=types.Schema(type=types.Type.STRING),
+                    description="List of plan steps in order, e.g. ['Click Orders', 'Fill customer name', 'Submit form']",
+                ),
+            },
+            required=["steps"],
+        ),
+    ),
 ]
 
 if ENABLE_SAFETY_LOCK:
@@ -164,8 +179,8 @@ async def websocket_endpoint(websocket: WebSocket):
                         "\n\n"
                         "### OPERATIONAL PROTOCOL:\n"
                         "1. **Analyze & Plan**: When the user gives a command, first analyze the screen. "
-                        "You MUST state your plan before taking any action. "
-                        "Format your plan as: 'PLAN: [Step 1], [Step 2], etc.'\n"
+                        "Call `set_plan(steps=[...])` SILENTLY before taking any actions — do NOT read the steps aloud, they will be shown in the HUD overlay. "
+                        "Then immediately start executing.\n"
                         f"{safety_protocol}"
                         "3. **Tool Selection**: \n"
                         "   - Use `click_element(id)` to click buttons, links, or inputs.\n"
@@ -174,7 +189,8 @@ async def websocket_endpoint(websocket: WebSocket):
                         "   - Use `navigate_to(url)` to switch between different modules.\n"
                         "   - Use `read_text()` to extract data from the page.\n"
                         "   - Use `undo_last_action()` if the user wants to revert the last thing you did.\n"
-                        "4. **Progress Updates**: After each tool call, briefly state which step you just completed and what is next.\n"
+                        "   - Use `set_plan(steps)` silently at the start of every multi-step task.\n"
+                        "4. **Progress Updates**: After ALL steps are done, give a brief spoken summary. Do NOT narrate each individual step — the HUD shows progress.\n"
                         "5. **Communication**: Be professional and concise. If you are unsure or need clarification, ask the user."
                     )
                 )
@@ -281,8 +297,18 @@ async def websocket_endpoint(websocket: WebSocket):
 
                         elif message.get("type") == "status":
                             print(f"📡 Extension Status: {message.get('message')} - {message.get('detail', '')}")
-                            
+
                             action_completed = message.get("action")
+                            # Advance plan step on each successful action
+                            if action_completed and message.get("message") == "success" and plan_state["steps"]:
+                                plan_state["active_index"] = min(plan_state["active_index"] + 1, len(plan_state["steps"]))
+                                await websocket.send_json({
+                                    "type": "command",
+                                    "command": "update_plan",
+                                    "steps": plan_state["steps"],
+                                    "activeIndex": plan_state["active_index"],
+                                })
+
                             if pending_tool_calls:
                                 function_responses = []
                                 for call_id, tool_name in list(pending_tool_calls.items()):
@@ -398,6 +424,25 @@ async def websocket_endpoint(websocket: WebSocket):
                                     command_payload = {"type": "command", "command": name}
                                     command_payload.update(args)
                                     
+                                    # 0. set_plan — silent, instant, no extension round-trip
+                                    if name == "set_plan":
+                                        steps = args.get("steps", [])
+                                        if steps:
+                                            plan_state["steps"] = steps
+                                            plan_state["active_index"] = 0
+                                            await websocket.send_json({
+                                                "type": "command",
+                                                "command": "update_plan",
+                                                "steps": steps,
+                                                "activeIndex": 0,
+                                            })
+                                            print(f"📋 Plan set: {steps}")
+                                        function_responses.append(types.FunctionResponse(
+                                            name=name, id=function_call.id,
+                                            response={"result": "Plan displayed in HUD."}
+                                        ))
+                                        continue
+
                                     # 1. Structural Safety Lock Interception
                                     sensitive_tools = ["click_element", "type_text", "navigate_to"]
                                     if ENABLE_SAFETY_LOCK and name in sensitive_tools and el_id not in confirmed_ids:
