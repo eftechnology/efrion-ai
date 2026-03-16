@@ -1,44 +1,39 @@
 # ERP AI Autopilot - Roadmap & Status
 
-## 🚀 Current Status: Stable v1.5 (Multimodal & Optimized)
-The ERP AI Autopilot is now a robust, real-time multimodal agent capable of navigating complex ERP interfaces with low latency, high stability, and user safety at its core.
+## 🚀 Current Status: Stable v1.6 (Persistent & Cross-Page)
+The ERP AI Autopilot is now a fully persistent multimodal agent. It can maintain its internal state and task checklists across page reloads and navigations, enabling complex, multi-page ERP workflows.
 
 ---
 
-## ✅ Recently Completed Updates (v1.5)
+## ✅ Recently Completed Updates (v1.6)
 
 ### 🏎️ Performance & Latency
-- **Event-Driven DOM Syncing**: Implemented `MutationObserver` to detect UI changes and trigger immediate state synchronization (300ms debounce).
-- **Action-Driven Refresh**: Automatic DOM sync 100ms after a click or type action finishes.
-- **Optimized Intervals**: Reduced periodic screen capture from 5s to 1.5s and post-speech cooldown from 5s to 0.8s.
-- **Granular DOM Diffing**: Only send semantic changes (add/remove/update) to Gemini, significantly reducing bandwidth and token usage.
+- **Advanced DOM Diffing**: Refined the diffing logic to track spatial movement (X/Y shifts) and dynamic select option changes, ensuring 100% accuracy with minimal bandwidth.
+- **Event-Driven Syncing**: Implemented immediate UI synchronization upon action completion or DOM mutation.
 
 ### 🏗️ Architectural Robustness
-- **Async Event Queues**: Decoupled WebSocket reading from Gemini API dispatch using internal `asyncio.Queue` objects.
-- **Protocol Synchronization**: Implemented a `ready_for_input` barrier to prevent Gemini Live API protocol errors (1008) by ensuring media isn't sent while tools are pending.
-- **Stateful Safety Lock**: Optional confirmation for high-stakes actions with a physical HUD button and verbal approval memory to prevent confirmation loops.
+- **Cross-Page Persistence**: Implemented a stateful background manager that preserves the AI's plan and session state during URL navigations and page refreshes.
+- **Protocol Synchronization**: Robust handling of tool acknowledgments to prevent Gemini Live API deadlocks.
 
 ### 👤 User Experience (UX)
-- **Shadow DOM Isolation**: The AI HUD is now fully isolated from the host website's CSS, ensuring a consistent look on any ERP.
-- **Visual Planning Checklist**: Gemini now generates a multi-step plan displayed as a live checklist in the HUD.
-- **Real-Time Transcriptions**: Integrated user and model transcriptions directly into the on-page HUD.
-- **Upgraded Test Lab**: `test_erp.html` is now a comprehensive ERP simulator with tabs, dynamic tables, and complex forms.
+- **Automatic HUD Restoration**: The AI HUD and multi-step checklist automatically rebuild themselves on new pages if a session is active.
+- **Dual-Confirmation System**: Refined the safety lock with physical HUD buttons and verbal affirmation memory.
 
 ---
 
 ## 🛠️ Upcoming Tasks (Short-Term)
 
-### 1. Multi-Step Planning Refinement
-- **Persistence**: Save plans across page reloads so the AI doesn't lose context if the browser navigates to a new URL.
-- **Undo/Redo**: Allow the user to "Undo" the last AI action or "Cancel" the remaining plan.
+### 1. Dead-End Detection & Recovery
+- **Self-Correction**: Teach the AI to recognize when an action (like a click) failed to change the page state and automatically try an alternative strategy.
+- **Feedback Loop**: Provide the AI with explicit "No change detected" signals.
 
-### 2. Advanced Error Handling
-- **Dead-End Detection**: Teach the AI to recognize when a button click didn't result in the expected change and try a different strategy.
-- **Connection Recovery**: Automatic WebSocket reconnection with session state resumption.
+### 2. Multi-Step Planning (Advanced)
+- **Undo/Redo**: Allow the user to "Undo" the last AI action or "Cancel" the remaining steps in a plan via voice command.
+- **Sub-task Branching**: Enable the AI to pivot its plan dynamically based on unexpected data discovered during a task.
 
 ### 3. Contextual Enrichment
-- **Form Label Association**: Better logic to associate input fields with their visible labels even in messy HTML structures.
-- **OCR Integration**: Fallback to OCR for non-text elements (like icons without labels) using Gemini's visual reasoning.
+- **Form Label Association**: Implement advanced proximity analysis to link input fields with their visible labels in complex ERP forms.
+- **OCR Fallback**: Use Gemini's vision to interact with non-text elements (icons, custom canvases) that lack ARIA labels.
 
 ---
 
