@@ -15,7 +15,6 @@ htmlcov/
 *.egg-info/
 dist/
 .history/
-ROADMAP.md
 NOTES.md
 PROJECT_RULES.md
 
