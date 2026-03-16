@@ -178,6 +178,8 @@ async def websocket_endpoint(websocket: WebSocket):
                         "You also receive a textual 'Accessibility Tree' that lists interactive elements and their IDs. "
                         "\n\n"
                         "### OPERATIONAL PROTOCOL:\n"
+                        "0. **Wait for Command**: IMPORTANT: You must wait for the user to speak before performing any actions or calling any tools. "
+                        "Do NOT act proactively based solely on the visual state of the screen at startup.\n"
                         "1. **Analyze & Plan**: When the user gives a command, first analyze the screen. "
                         "Call `set_plan(steps=[...])` SILENTLY before taking any actions — do NOT read the steps aloud, they will be shown in the HUD overlay. "
                         "Then immediately start executing.\n"

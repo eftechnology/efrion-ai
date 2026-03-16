@@ -934,8 +934,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         
         startRecording();
         
-        // Immediate sync on connect
-        setTimeout(() => captureAndSend(), 500);
+        // Initial screen sync (delayed slightly to ensure audio stream is ready and user can speak)
+        setTimeout(() => captureAndSend(), 1000);
 
         if (!mutationObserver) {
             mutationObserver = new MutationObserver(() => {
