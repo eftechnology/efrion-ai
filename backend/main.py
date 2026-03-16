@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 # ==============================================================================
 load_dotenv()
 os.environ["GEMINI_API_KEY"] = os.environ.get("GEMINI_API_KEY", "YOUR_GEMINI_API_KEY_HERE")
+ENABLE_SAFETY_LOCK = os.environ.get("ENABLE_SAFETY_LOCK", "false").lower() == "true"
 
 app = FastAPI()
 
@@ -110,6 +111,24 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     print("🔌 New extension connection accepted")
     
+    # ==============================================================================
+    # 🤖 CONFIGURE SYSTEM INSTRUCTION
+    # ==============================================================================
+    if ENABLE_SAFETY_LOCK:
+        safety_protocol = (
+            "2. Safety & Confirmation (MANDATORY): \n"
+            "   - For any CRITICAL action (e.g., clicking 'Submit', 'Delete', 'Pay', 'Confirm', 'Save Changes'), you MUST NOT execute the click immediately.\n"
+            "   - First, call `highlight_element(id)` to show the user what you intend to do.\n"
+            "   - Verbally ask: 'I am about to [action] on [element], should I proceed?'\n"
+            "   - ONLY call `click_element(id)` after the user gives verbal approval ('Yes', 'Proceed', 'Go ahead').\n"
+        )
+    else:
+        safety_protocol = (
+            "2. Speed & Autonomy: \n"
+            "   - You should execute actions IMMEDIATELY without asking for verbal permission first. "
+            "The user has disabled the safety lock for faster interaction. Perform the requested task directly.\n"
+        )
+
     # Configure the Gemini Live API session
     config = types.LiveConnectConfig(
         response_modalities=[types.Modality.AUDIO],
@@ -135,11 +154,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         "\n\n"
                         "### OPERATIONAL PROTOCOL:\n"
                         "1. **Analyze First**: When the user gives a command, look at the screenshot and Accessibility Tree to find the relevant elements. "
-                        "2. **Safety & Confirmation (MANDATORY)**: \n"
-                        "   - For any CRITICAL action (e.g., clicking 'Submit', 'Delete', 'Pay', 'Confirm', 'Save Changes'), you MUST NOT execute the click immediately.\n"
-                        "   - First, call `highlight_element(id)` to show the user what you intend to do.\n"
-                        "   - Verbally ask: 'I am about to [action] on [element], should I proceed?'\n"
-                        "   - ONLY call `click_element(id)` after the user gives verbal approval ('Yes', 'Proceed', 'Go ahead').\n"
+                        f"{safety_protocol}"
                         "3. **Tool Selection**: \n"
                         "   - Use `click_element(id)` to click buttons, links, or inputs.\n"
                         "   - Use `type_text(id, text)` to fill out forms. Always click the field first if needed.\n"
@@ -160,9 +175,13 @@ async def websocket_endpoint(websocket: WebSocket):
         print(f"🔗 Connecting to Gemini Live API with model: gemini-2.5-flash-native-audio-preview-12-2025")
         async with client.aio.live.connect(model="gemini-2.5-flash-native-audio-preview-12-2025", config=config) as gemini_session:
             pending_tool_calls = {}
-            locked_commands = {} # ID -> Command map for deduplication
-            confirmed_ids = set() # Track IDs already approved by user
+            locked_commands = {} 
+            confirmed_ids = set() 
             stats = {"audio_chunks_sent": 0}
+            
+            # Synchronization event: only send input when no tool calls are pending
+            ready_for_input = asyncio.Event()
+            ready_for_input.set()
 
             # Queues for decoupling
             audio_input_queue = asyncio.Queue()
@@ -174,12 +193,11 @@ async def websocket_endpoint(websocket: WebSocket):
                 try:
                     while True:
                         audio_bytes = await audio_input_queue.get()
+                        # AUDIO MUST NOT BE BLOCKED so Gemini can hear "Proceed"
                         await gemini_session.send_realtime_input(
                             audio=types.Blob(mime_type="audio/pcm;rate=16000", data=audio_bytes)
                         )
                         stats["audio_chunks_sent"] += 1
-                        if stats["audio_chunks_sent"] % 20 == 0:
-                            print(f"🚀 [GEMINI] Forwarded {stats['audio_chunks_sent']} audio chunks.")
                 except asyncio.CancelledError:
                     pass
 
@@ -188,6 +206,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 try:
                     while True:
                         video_bytes = await video_input_queue.get()
+                        await ready_for_input.wait() # VIDEO/DOM ARE STILL BLOCKED
                         await gemini_session.send_realtime_input(video=types.Blob(mime_type="image/jpeg", data=video_bytes))
                 except asyncio.CancelledError:
                     pass
@@ -197,6 +216,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 try:
                     while True:
                         text = await text_input_queue.get()
+                        await ready_for_input.wait() # VIDEO/DOM ARE STILL BLOCKED
                         await gemini_session.send_realtime_input(text=text)
                 except asyncio.CancelledError:
                     pass
@@ -239,15 +259,12 @@ async def websocket_endpoint(websocket: WebSocket):
                         elif message.get("type") == "status":
                             print(f"📡 Extension Status: {message.get('message')} - {message.get('detail', '')}")
                             
-                            # Extension sends back the action name (e.g. 'click_element') that just finished
                             action_completed = message.get("action")
-                            
                             if pending_tool_calls:
                                 function_responses = []
-                                # Find the specific call_id for the action that just completed
                                 for call_id, tool_name in list(pending_tool_calls.items()):
                                     if action_completed and tool_name != action_completed:
-                                        continue # Only resolve the tool call that matches the completed action
+                                        continue
                                         
                                     function_responses.append(
                                         types.FunctionResponse(
@@ -256,10 +273,14 @@ async def websocket_endpoint(websocket: WebSocket):
                                             response={"result": message.get("message"), "detail": message.get("detail", "")}
                                         )
                                     )
-                                    del pending_tool_calls[call_id] # Remove from pending once resolved
+                                    del pending_tool_calls[call_id]
                                 
                                 if function_responses:
                                     await gemini_session.send_tool_response(function_responses=function_responses)
+                                    # ONLY resume input if ALL tool calls are cleared
+                                    if not pending_tool_calls:
+                                        print("🟢 All tool calls resolved. Resuming input dispatchers.")
+                                        ready_for_input.set()
 
                     except WebSocketDisconnect:
                         print("🔴 Extension disconnected.")
@@ -283,7 +304,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                     transcript = server_content.input_transcription.text.lower()
                                     await websocket.send_json({"type": "transcription", "source": "USER", "text": transcript})
                                     
-                                    # SAFETY LOCK CHECK
+                                    # SAFETY LOCK RELEASE CHECK
                                     affirmations = ["proceed", "yes", "go ahead", "do it", "confirm", "ok", "okay", "yep", "sure"]
                                     if any(word in transcript for word in affirmations):
                                         if locked_commands:
@@ -305,32 +326,51 @@ async def websocket_endpoint(websocket: WebSocket):
 
                             # Handle Function Calls
                             if response.tool_call is not None:
+                                function_responses = []
+                                
                                 for function_call in response.tool_call.function_calls:
                                     name = function_call.name
                                     args = function_call.args
                                     el_id = args.get('id', 'global')
-                                    pending_tool_calls[function_call.id] = name
                                     
                                     command_payload = {"type": "command", "command": name}
                                     command_payload.update(args)
                                     
                                     # STRUCTURAL SAFETY LOCK
                                     sensitive_tools = ["click_element", "type_text", "navigate_to"]
-                                    if name in sensitive_tools:
-                                        if el_id in confirmed_ids:
-                                            print(f"⏩ Auto-Releasing confirmed action: {name}({el_id})")
-                                            await websocket.send_json(command_payload)
-                                        else:
-                                            print(f"🔒 Safety Lock ACTIVE: Intercepted {name}({json.dumps(args)})")
-                                            locked_commands[el_id] = command_payload
-                                            await websocket.send_json({"type": "command", "command": "show_confirm_ui", "action_name": name})
-                                            await websocket.send_json({
-                                                "type": "transcription", 
-                                                "source": "SYSTEM", 
-                                                "text": f"Waiting for confirmation to {name}..."
-                                            })
+                                    if ENABLE_SAFETY_LOCK and name in sensitive_tools and el_id not in confirmed_ids:
+                                        print(f"🔒 Safety Lock ACTIVE: Intercepted {name}({json.dumps(args)})")
+                                        locked_commands[el_id] = command_payload
+                                        
+                                        # IMMEDIATE ACK: Tell Gemini we are waiting for human confirmation
+                                        # This unblocks the protocol turn so we can keep sending audio/video
+                                        function_responses.append(types.FunctionResponse(
+                                            name=name,
+                                            id=function_call.id,
+                                            response={"result": "Action intercepted. Waiting for human confirmation via voice or button."}
+                                        ))
+                                        
+                                        # UI Notifications
+                                        await websocket.send_json({"type": "command", "command": "show_confirm_ui", "action_name": name})
+                                        await websocket.send_json({
+                                            "type": "transcription", 
+                                            "source": "SYSTEM", 
+                                            "text": f"Waiting for confirmation to {name}..."
+                                        })
                                     else:
+                                        # Non-sensitive, already confirmed, or lock disabled
+                                        if ENABLE_SAFETY_LOCK and name in sensitive_tools and el_id in confirmed_ids:
+                                            print(f"⏩ Auto-Releasing confirmed action: {name}({el_id})")
+                                        elif not ENABLE_SAFETY_LOCK and name in sensitive_tools:
+                                            print(f"⚡ Safety Lock DISABLED: Auto-executing {name}")
+                                        
+                                        # Add to pending to be resolved when extension finishes
+                                        pending_tool_calls[function_call.id] = name
                                         await websocket.send_json(command_payload)
+                                
+                                # Send immediate responses for intercepted calls
+                                if function_responses:
+                                    await gemini_session.send_tool_response(function_responses=function_responses)
                         
                         await asyncio.sleep(0.1)
                 except asyncio.CancelledError:
