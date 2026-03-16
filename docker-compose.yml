@@ -2,7 +2,7 @@ services:
 
   # ── Traefik reverse proxy ────────────────────────────────────────────────────
   traefik:
-    image: traefik:v3.3
+    image: traefik:v3.6
     restart: unless-stopped
     command:
       - --providers.docker=true

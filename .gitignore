@@ -5,6 +5,8 @@ __pycache__/
 env/
 venv/
 .env
+.env.prod
+env.staging
 
 # IDE and Project
 .vscode/
