@@ -151,6 +151,19 @@ function createHUD() {
           }
           #erp-ai-stop-btn:hover { background: rgba(255, 0, 0, 0.3); border-color: #ff5555; transform: translateY(-2px); }
           #erp-ai-stop-btn:active { transform: scale(0.9); }
+          #erp-ai-start-btn {
+            background: #2563eb;
+            color: white;
+            border: none;
+            padding: 8px 18px;
+            border-radius: 20px;
+            font-weight: 600;
+            cursor: pointer;
+            display: none;
+            transition: all 0.2s;
+            box-shadow: 0 4px 10px rgba(37, 99, 235, 0.3);
+          }
+          #erp-ai-start-btn:hover { background: #1d4ed8; transform: translateY(-1px); }
           #erp-ai-confirm-btn {
             background: #4CAF50;
             color: white;
@@ -195,10 +208,11 @@ function createHUD() {
         
         <div id="erp-ai-plan-container"></div>
 
-        <div id="erp-ai-indicator" class="status-indicator" style="background-color: #4CAF50; animation: erp-pulse-green 1.5s infinite;"></div>
-        <span id="erp-ai-status-text" style="font-weight: 600; min-width: 90px; color: #eee;">AI Online</span>
+        <div id="erp-ai-indicator" class="status-indicator" style="background-color: #94a3b8;"></div>
+        <span id="erp-ai-status-text" style="font-weight: 600; min-width: 90px; color: #eee;">Autopilot</span>
         
         <div style="display: flex; gap: 10px; align-items: center;">
+            <button id="erp-ai-start-btn">Start</button>
             <button id="erp-ai-confirm-btn">Confirm Action</button>
             <button id="erp-ai-stop-btn" title="Exit Autopilot" style="
                 background: rgba(255, 0, 0, 0.1);
@@ -245,16 +259,25 @@ function createHUD() {
     
     erpShadowRoot.appendChild(hud);
     
+    const startBtn = erpShadowRoot.getElementById('erp-ai-start-btn');
     const stopBtn = erpShadowRoot.getElementById('erp-ai-stop-btn');
+    const confirmBtn = erpShadowRoot.getElementById('erp-ai-confirm-btn');
+
+    startBtn.addEventListener('click', () => {
+        startBtn.innerText = "Connecting...";
+        startBtn.disabled = true;
+        safeSendMessage({ action: 'start_session' });
+    });
+
     stopBtn.addEventListener('click', () => safeSendMessage({ action: 'stop_session' }));
 
-    const confirmBtn = erpShadowRoot.getElementById('erp-ai-confirm-btn');
     confirmBtn.addEventListener('click', () => {
         safeSendMessage({ type: 'action', action: 'confirm' });
         confirmBtn.style.display = 'none';
     });
     
     console.log("✅ HUD created successfully in Shadow DOM");
+    updateHUD('offline'); // Initial state
 }
 
 function removeHUD() {
@@ -268,17 +291,38 @@ function updateHUD(status) {
     const text = erpShadowRoot.getElementById('erp-ai-status-text');
     const indicator = erpShadowRoot.getElementById('erp-ai-indicator');
     const confirmBtn = erpShadowRoot.getElementById('erp-ai-confirm-btn');
+    const startBtn = erpShadowRoot.getElementById('erp-ai-start-btn');
+    const stopBtn = erpShadowRoot.getElementById('erp-ai-stop-btn');
+    const transcript = erpShadowRoot.getElementById('erp-ai-transcript');
+    
     if (!text || !indicator) return;
 
-    if (status === 'listening') {
+    if (status === 'offline') {
+        text.innerText = 'Autopilot';
+        indicator.style.backgroundColor = '#94a3b8';
+        indicator.style.animation = 'none';
+        if (startBtn) { startBtn.style.display = 'block'; startBtn.disabled = false; startBtn.innerText = "Start"; }
+        if (stopBtn) stopBtn.style.display = 'none';
+        if (confirmBtn) confirmBtn.style.display = 'none';
+        if (transcript) transcript.style.display = 'none';
+        const planContainer = erpShadowRoot.getElementById('erp-ai-plan-container');
+        if (planContainer) planContainer.style.display = 'none';
+        erpShadowRoot.getElementById('erp-ai-volume-container').style.display = 'none';
+    } else if (status === 'listening') {
         text.innerText = 'Listening...';
         indicator.style.backgroundColor = '#f44336';
         indicator.style.animation = 'erp-pulse-red 1s infinite';
+        if (startBtn) startBtn.style.display = 'none';
+        if (stopBtn) stopBtn.style.display = 'flex';
+        if (transcript) transcript.style.display = 'block';
         erpShadowRoot.getElementById('erp-ai-volume-container').style.display = 'block';
     } else if (status === 'idle') {
         text.innerText = 'AI Online';
         indicator.style.backgroundColor = '#4CAF50';
         indicator.style.animation = 'erp-pulse-green 1.5s infinite';
+        if (startBtn) startBtn.style.display = 'none';
+        if (stopBtn) stopBtn.style.display = 'flex';
+        if (transcript) transcript.style.display = 'block';
         erpShadowRoot.getElementById('erp-ai-volume-container').style.display = 'block';
     } else if (status === 'speaking') {
         text.innerText = 'AI Speaking...';
@@ -418,8 +462,11 @@ function captureAndSend(domOnly = false) {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message.action === 'ws_connected') {
+    if (message.action === 'inject_hud') {
         createHUD();
+    } else if (message.action === 'ws_connected') {
+        createHUD();
+        updateHUD('idle');
         // Set volume container visible when connected
         const vol = erpShadowRoot?.getElementById('erp-ai-volume-container');
         if (vol) vol.style.display = 'block';
@@ -482,7 +529,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         alert(message.message);
         safeSendMessage({ action: 'stop_session' });
     } else if (message.action === 'stop') {
-        stopRecording(); removeHUD();
+        stopRecording(); 
+        updateHUD('offline');
         if (screenCaptureIntervalId) clearInterval(screenCaptureIntervalId);
         if (mutationObserver) { mutationObserver.disconnect(); mutationObserver = null; }
     } else if (message.action === 'play_audio') {

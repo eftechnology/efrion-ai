@@ -17,6 +17,12 @@ function sendMessageToActiveTab(payload) {
     });
 }
 
+// Handle clicking the extension icon
+chrome.action?.onClicked.addListener((tab) => {
+    console.log("🖱️ Extension icon clicked - Injecting HUD");
+    sendMessageToActiveTab({ action: 'inject_hud' });
+});
+
 // Track navigations to notify the AI
 chrome.webNavigation?.onCommitted.addListener((details) => {
     if (details.frameId === 0 && ws && ws.readyState === WebSocket.OPEN) {
