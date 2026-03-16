@@ -151,6 +151,34 @@ function createHUD() {
           }
           #erp-ai-stop-btn:hover { background: rgba(255, 0, 0, 0.3); border-color: #ff5555; transform: translateY(-2px); }
           #erp-ai-stop-btn:active { transform: scale(0.9); }
+          #erp-ai-minimize-btn {
+            background: transparent;
+            border: none;
+            color: #888;
+            cursor: pointer;
+            padding: 5px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: color 0.2s;
+          }
+          #erp-ai-minimize-btn:hover { color: #fff; }
+          #erp-ai-hud.mini {
+            padding: 8px 12px;
+            width: fit-content;
+            gap: 8px;
+          }
+          #erp-ai-hud.mini #erp-ai-status-text,
+          #erp-ai-hud.mini #erp-ai-transcript,
+          #erp-ai-hud.mini #erp-ai-volume-container,
+          #erp-ai-hud.mini #erp-ai-start-btn,
+          #erp-ai-hud.mini #erp-ai-stop-btn,
+          #erp-ai-hud.mini #erp-ai-confirm-btn {
+            display: none !important;
+          }
+          #erp-ai-hud.mini #erp-ai-plan-container {
+            display: none !important;
+          }
           #erp-ai-start-btn {
             background: #2563eb;
             color: white;
@@ -208,6 +236,12 @@ function createHUD() {
         
         <div id="erp-ai-plan-container"></div>
 
+        <button id="erp-ai-minimize-btn" title="Minimize/Expand">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                <path d="M19 13H5v-2h14v2z"/>
+            </svg>
+        </button>
+
         <div id="erp-ai-indicator" class="status-indicator" style="background-color: #94a3b8;"></div>
         <span id="erp-ai-status-text" style="font-weight: 600; min-width: 90px; color: #eee;">Autopilot</span>
         
@@ -262,6 +296,15 @@ function createHUD() {
     const startBtn = erpShadowRoot.getElementById('erp-ai-start-btn');
     const stopBtn = erpShadowRoot.getElementById('erp-ai-stop-btn');
     const confirmBtn = erpShadowRoot.getElementById('erp-ai-confirm-btn');
+    const minBtn = erpShadowRoot.getElementById('erp-ai-minimize-btn');
+
+    minBtn.addEventListener('click', () => {
+        hud.classList.toggle('mini');
+        const isMini = hud.classList.contains('mini');
+        minBtn.innerHTML = isMini ? 
+            '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M7 14H5v5h2v-5zm12-5h2V4h-2v5zM5 4v5h2V4H5zm14 15h2v-5h-2v5z"/></svg>' : 
+            '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M19 13H5v-2h14v2z"/></svg>';
+    });
 
     startBtn.addEventListener('click', () => {
         startBtn.innerText = "Connecting...";
@@ -511,12 +554,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         else if (message.command === 'read_text') readText(message.query);
         else if (message.command === 'highlight_element') highlightElement(message.id);
         else if (message.command === 'show_confirm_ui') {
+            const hud = erpShadowRoot?.getElementById('erp-ai-hud');
+            hud?.classList.remove('mini');
             updateHUD('confirm');
         } else if (message.command === 'hide_confirm_ui') {
             const confirmBtn = erpShadowRoot?.getElementById('erp-ai-confirm-btn');
             if (confirmBtn) confirmBtn.style.display = 'none';
             updateHUD('idle');
         } else if (message.command === 'update_plan') {
+            const hud = erpShadowRoot?.getElementById('erp-ai-hud');
+            hud?.classList.remove('mini');
             updatePlanHUD(message.steps);
         } else if (message.command === 'undo_last_action') {
             undoLastAction();
