@@ -10,6 +10,47 @@ let lastSpeechEndTime = 0;
 const POST_SPEECH_COOLDOWN_MS = 800; // Lowered from 5000 to improve responsiveness
 let isCoolingDown = false;
 let lastTreeJson = ''; // Used to track DOM changes
+let actionHistory = []; // Stack of { type, id, oldValue, url } for undo
+
+function pushToHistory(action) {
+    actionHistory.push({ ...action, timestamp: Date.now() });
+    if (actionHistory.length > 10) actionHistory.shift(); // Keep last 10 actions
+    console.log(`📜 Action pushed to history: ${action.type}`);
+}
+
+function undoLastAction() {
+    if (actionHistory.length === 0) {
+        console.warn("⚠️ No actions to undo.");
+        return;
+    }
+
+    const last = actionHistory.pop();
+    console.log(`🔙 Undoing: ${last.type} on ${last.id}`);
+
+    if (last.type === 'type_text') {
+        const el = document.querySelector(`[data-gemini-id="${last.id}"]`);
+        if (el) {
+            el.value = last.oldValue || "";
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+            console.log("✅ Restored previous value.");
+        }
+    } else if (last.type === 'click_element') {
+        if (last.causedNavigation) {
+            window.history.back();
+            console.log("✅ Navigating back.");
+        } else {
+            // Re-click to toggle if it was a dynamic UI element
+            const el = document.querySelector(`[data-gemini-id="${last.id}"]`);
+            if (el) el.click();
+            console.log("✅ Re-clicked to toggle state.");
+        }
+    }
+    
+    updateHUD('idle');
+    const statusText = erpShadowRoot?.getElementById('erp-ai-status-text');
+    if (statusText) statusText.innerText = "Undo Complete";
+}
 
 function scheduleDebouncedCapture() {
     if (mutationDebounceTimer) clearTimeout(mutationDebounceTimer);
@@ -430,6 +471,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             updateHUD('idle');
         } else if (message.command === 'update_plan') {
             updatePlanHUD(message.steps);
+        } else if (message.command === 'undo_last_action') {
+            undoLastAction();
         }
     } else if (message.type === 'transcription') {
         updateTranscriptHUD(message.source, message.text);
@@ -725,6 +768,7 @@ function simulateClickWithGhostCursor(id) {
             const changed = currentTree !== beforeState || currentUrl !== beforeUrl;
 
             if (changed) {
+                pushToHistory({ type: 'click_element', id: id, causedNavigation: currentUrl !== beforeUrl });
                 safeSendMessage({ type: 'status', action: 'click_element', message: 'success', detail: `Clicked ${id}. State changed.` });
                 setTimeout(() => captureAndSend(true), 100);
             } else {
@@ -744,8 +788,8 @@ function typeTextIntoElement(id, text) {
     const el = document.querySelector(`[data-gemini-id="${id}"]`);
     if (!el) { updateHUD('idle'); return; }
 
+    const previousValue = el.value; // Capture for history
     el.focus();
-
     if (el.tagName.toLowerCase() === 'select') {
         let optionToSelect = Array.from(el.options).find(opt => 
             opt.value.toLowerCase() === text.toLowerCase() || 
@@ -765,6 +809,7 @@ function typeTextIntoElement(id, text) {
     setTimeout(() => { 
         updateHUD('idle'); 
         // For typing, we usually just report success as 'change' is the goal
+        pushToHistory({ type: 'type_text', id: id, oldValue: previousValue });
         safeSendMessage({ 
             type: 'status', 
             action: 'type_text', 

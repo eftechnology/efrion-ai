@@ -82,6 +82,11 @@ base_tools = [
         ),
     ),
     types.FunctionDeclaration(
+        name="undo_last_action",
+        description="Reverts the last action performed by the AI (e.g., restores previous text or navigates back). Use this if the user says 'Undo' or 'Go back'.",
+        parameters=types.Schema(type=types.Type.OBJECT, properties={}),
+    ),
+    types.FunctionDeclaration(
         name="read_text",
         description="Returns the visible text content of the entire page or a specific area.",
         parameters=types.Schema(
@@ -167,6 +172,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         "   - Use `scroll_page(direction)` if the element you need isn't visible.\n"
                         "   - Use `navigate_to(url)` to switch between different modules.\n"
                         "   - Use `read_text()` to extract data from the page.\n"
+                        "   - Use `undo_last_action()` if the user wants to revert the last thing you did.\n"
                         "4. **Progress Updates**: After each tool call, briefly state which step you just completed and what is next.\n"
                         "5. **Communication**: Be professional and concise. If you are unsure or need clarification, ask the user."
                     )
@@ -329,6 +335,11 @@ async def websocket_endpoint(websocket: WebSocket):
                                                 await websocket.send_json(cmd)
                                             locked_commands.clear()
                                             await websocket.send_json({"type": "command", "command": "hide_confirm_ui"})
+                                    
+                                    # UNDO SHORTCUT
+                                    if "undo" in transcript or "go back" in transcript:
+                                        print(f"🔙 Undo triggered via voice: '{transcript}'")
+                                        await websocket.send_json({"type": "command", "command": "undo_last_action"})
 
                                 if server_content.output_transcription and server_content.output_transcription.text:
                                     text = server_content.output_transcription.text
