@@ -31,67 +31,70 @@ client = genai.Client(http_options={'api_version': 'v1alpha'})
 # ==============================================================================
 # 🛠️ CONFIGURE FUNCTION CALLING (TOOLS)
 # ==============================================================================
-ui_tools = types.Tool(
-    function_declarations=[
-        types.FunctionDeclaration(
-            name="click_element",
-            description="Clicks on an interactive element on the screen using its ID from the provided Accessibility Tree.",
-            parameters=types.Schema(
-                type=types.Type.OBJECT,
-                properties={
-                    "id": types.Schema(type=types.Type.STRING, description="The ID of the element to click (e.g., 'el-4')."),
-                },
-                required=["id"],
-            ),
+base_tools = [
+    types.FunctionDeclaration(
+        name="click_element",
+        description="Clicks on an interactive element on the screen using its ID from the provided Accessibility Tree.",
+        parameters=types.Schema(
+            type=types.Type.OBJECT,
+            properties={
+                "id": types.Schema(type=types.Type.STRING, description="The ID of the element to click (e.g., 'el-4')."),
+            },
+            required=["id"],
         ),
-        types.FunctionDeclaration(
-            name="type_text",
-            description="Types text into an input field or textarea using its ID from the provided Accessibility Tree.",
-            parameters=types.Schema(
-                type=types.Type.OBJECT,
-                properties={
-                    "id": types.Schema(type=types.Type.STRING, description="The ID of the element to type into."),
-                    "text": types.Schema(type=types.Type.STRING, description="The text to type."),
-                },
-                required=["id", "text"],
-            ),
+    ),
+    types.FunctionDeclaration(
+        name="type_text",
+        description="Types text into an input field, textarea, or selects an option from a <select> dropdown using its ID from the provided Accessibility Tree.",
+        parameters=types.Schema(
+            type=types.Type.OBJECT,
+            properties={
+                "id": types.Schema(type=types.Type.STRING, description="The ID of the element to interact with."),
+                "text": types.Schema(type=types.Type.STRING, description="The text to type or the option value/label to select."),
+            },
+            required=["id", "text"],
         ),
-        types.FunctionDeclaration(
-            name="scroll_page",
-            description="Scrolls the page up or down.",
-            parameters=types.Schema(
-                type=types.Type.OBJECT,
-                properties={
-                    "direction": types.Schema(
-                        type=types.Type.STRING, 
-                        description="The direction to scroll ('up' or 'down').",
-                        enum=["up", "down"]
-                    ),
-                },
-                required=["direction"],
-            ),
+    ),
+    types.FunctionDeclaration(
+        name="scroll_page",
+        description="Scrolls the page up or down.",
+        parameters=types.Schema(
+            type=types.Type.OBJECT,
+            properties={
+                "direction": types.Schema(
+                    type=types.Type.STRING, 
+                    description="The direction to scroll ('up' or 'down').",
+                    enum=["up", "down"]
+                ),
+            },
+            required=["direction"],
         ),
-        types.FunctionDeclaration(
-            name="navigate_to",
-            description="Navigates the browser to a specific URL (e.g., another ERP module).",
-            parameters=types.Schema(
-                type=types.Type.OBJECT,
-                properties={
-                    "url": types.Schema(type=types.Type.STRING, description="The full URL to navigate to."),
-                },
-                required=["url"],
-            ),
+    ),
+    types.FunctionDeclaration(
+        name="navigate_to",
+        description="Navigates the browser to a specific URL (e.g., another ERP module).",
+        parameters=types.Schema(
+            type=types.Type.OBJECT,
+            properties={
+                "url": types.Schema(type=types.Type.STRING, description="The full URL to navigate to."),
+            },
+            required=["url"],
         ),
-        types.FunctionDeclaration(
-            name="read_text",
-            description="Returns the visible text content of the entire page or a specific area.",
-            parameters=types.Schema(
-                type=types.Type.OBJECT,
-                properties={
-                    "query": types.Schema(type=types.Type.STRING, description="Optional search term to find specific text."),
-                },
-            ),
+    ),
+    types.FunctionDeclaration(
+        name="read_text",
+        description="Returns the visible text content of the entire page or a specific area.",
+        parameters=types.Schema(
+            type=types.Type.OBJECT,
+            properties={
+                "query": types.Schema(type=types.Type.STRING, description="Optional search term to find specific text."),
+            },
         ),
+    )
+]
+
+if ENABLE_SAFETY_LOCK:
+    base_tools.append(
         types.FunctionDeclaration(
             name="highlight_element",
             description="Visually highlights an element on the screen. Use this before critical actions to confirm with the user.",
@@ -103,8 +106,9 @@ ui_tools = types.Tool(
                 required=["id"],
             ),
         )
-    ]
-)
+    )
+
+ui_tools = types.Tool(function_declarations=base_tools)
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -159,7 +163,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         f"{safety_protocol}"
                         "3. **Tool Selection**: \n"
                         "   - Use `click_element(id)` to click buttons, links, or inputs.\n"
-                        "   - Use `type_text(id, text)` to fill out forms. Always click the field first if needed.\n"
+                        "   - Use `type_text(id, text)` to fill out forms AND to select options from `<select>` dropdowns. Always click the field first if needed.\n"
                         "   - Use `scroll_page(direction)` if the element you need isn't visible.\n"
                         "   - Use `navigate_to(url)` to switch between different modules.\n"
                         "   - Use `read_text()` to extract data from the page.\n"
@@ -238,15 +242,25 @@ async def websocket_endpoint(websocket: WebSocket):
                         elif message.get("type") == "image":
                             image_data = message.get("data")
                             page_state = message.get("pageState", {})
+                            dom_update = page_state.get('domUpdate')
                             
                             if image_data:
                                 if "," in image_data:
                                     image_data = image_data.split(",")[1]
                                 await video_input_queue.put(base64.b64decode(image_data))
 
-                            if page_state.get('domChanged'):
-                                text_part = f"URL: {page_state.get('url')}\nTitle: {page_state.get('title')}\nAccessibility Tree:\n{json.dumps(page_state.get('accessibilityTree', []), indent=2)}"
-                                await text_input_queue.put(text_part)
+                            if dom_update:
+                                text_msg = f"URL: {page_state.get('url')}\n"
+                                if dom_update['type'] == 'full':
+                                    text_msg += f"FULL ACCESSIBILITY TREE UPDATE:\n{json.dumps(dom_update['tree'], indent=2)}"
+                                else:
+                                    diff = dom_update['diff']
+                                    text_msg += "UI CHANGES DETECTED:\n"
+                                    if diff['added']: text_msg += f"- ADDED: {json.dumps(diff['added'])}\n"
+                                    if diff['removed']: text_msg += f"- REMOVED IDs: {', '.join(diff['removed'])}\n"
+                                    if diff['updated']: text_msg += f"- UPDATED: {json.dumps(diff['updated'])}\n"
+                                
+                                await text_input_queue.put(text_msg)
                             
                         elif message.get("type") == "action" and message.get("action") == "confirm":
                             if locked_commands:
@@ -349,39 +363,36 @@ async def websocket_endpoint(websocket: WebSocket):
                                     command_payload = {"type": "command", "command": name}
                                     command_payload.update(args)
                                     
-                                    # STRUCTURAL SAFETY LOCK
+                                    # 1. Structural Safety Lock Interception
                                     sensitive_tools = ["click_element", "type_text", "navigate_to"]
                                     if ENABLE_SAFETY_LOCK and name in sensitive_tools and el_id not in confirmed_ids:
                                         print(f"🔒 Safety Lock ACTIVE: Intercepted {name}({json.dumps(args)})")
                                         locked_commands[el_id] = command_payload
                                         
-                                        # IMMEDIATE ACK: Tell Gemini we are waiting for human confirmation
-                                        # This unblocks the protocol turn so we can keep sending audio/video
+                                        # Acknowledge to Gemini immediately
                                         function_responses.append(types.FunctionResponse(
-                                            name=name,
-                                            id=function_call.id,
-                                            response={"result": "Action intercepted. Waiting for human confirmation via voice or button."}
+                                            name=name, id=function_call.id,
+                                            response={"result": "Action intercepted. Waiting for human confirmation."}
                                         ))
                                         
-                                        # UI Notifications
                                         await websocket.send_json({"type": "command", "command": "show_confirm_ui", "action_name": name})
-                                        await websocket.send_json({
-                                            "type": "transcription", 
-                                            "source": "SYSTEM", 
-                                            "text": f"Waiting for confirmation to {name}..."
-                                        })
+                                        await websocket.send_json({"type": "transcription", "source": "SYSTEM", "text": f"Waiting for confirmation to {name}..."})
+                                    
+                                    # 2. Direct Execution (Lock disabled or already confirmed)
                                     else:
-                                        # Non-sensitive, already confirmed, or lock disabled
-                                        if ENABLE_SAFETY_LOCK and name in sensitive_tools and el_id in confirmed_ids:
-                                            print(f"⏩ Auto-Releasing confirmed action: {name}({el_id})")
-                                        elif not ENABLE_SAFETY_LOCK and name in sensitive_tools:
+                                        if not ENABLE_SAFETY_LOCK and name in sensitive_tools:
                                             print(f"⚡ Safety Lock DISABLED: Auto-executing {name}")
+                                        elif el_id in confirmed_ids:
+                                            print(f"⏩ Auto-Releasing confirmed action: {name}({el_id})")
                                         
-                                        # Add to pending to be resolved when extension finishes
-                                        pending_tool_calls[function_call.id] = name
+                                        # ALWAYS ACKNOWLEDGE IMMEDIATELY to prevent Error 1008
+                                        function_responses.append(types.FunctionResponse(
+                                            name=name, id=function_call.id,
+                                            response={"result": f"Execution started for {name}."}
+                                        ))
+                                        
                                         await websocket.send_json(command_payload)
                                 
-                                # Send immediate responses for intercepted calls
                                 if function_responses:
                                     await gemini_session.send_tool_response(function_responses=function_responses)
                         
