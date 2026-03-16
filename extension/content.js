@@ -645,7 +645,15 @@ async function startRecording() {
 
 function simulateClickWithGhostCursor(id) {
     const el = document.querySelector(`[data-gemini-id="${id}"]`);
-    if (!el) return;
+    if (!el) {
+        safeSendMessage({ type: 'status', action: 'click_element', message: 'error', detail: `Element ${id} not found.` });
+        return;
+    }
+
+    // Capture state before click
+    const beforeState = lastTreeJson;
+    const beforeUrl = window.location.href;
+
     const rect = el.getBoundingClientRect();
     const targetX = rect.left + rect.width / 2;
     const targetY = rect.top + rect.height / 2;
@@ -659,59 +667,72 @@ function simulateClickWithGhostCursor(id) {
     cursor.style.pointerEvents = 'none'; cursor.style.transition = 'all 0.5s ease-out';
     cursor.style.boxShadow = '0 0 10px rgba(255, 51, 102, 0.5)';
     document.body.appendChild(cursor);
+
     requestAnimationFrame(() => {
         cursor.style.left = `${targetX - 10}px`;
         cursor.style.top = `${targetY - 10}px`;
     });
+
     setTimeout(() => {
         cursor.style.transform = 'scale(2)'; cursor.style.opacity = '0';
         el.click();
-        setTimeout(() => { 
-            cursor.remove(); 
-            updateHUD('idle'); 
-            safeSendMessage({ type: 'status', action: 'click_element', message: 'success', detail: `Clicked ${id}` }); 
-            // Immediate sync after click to catch navigation/DOM changes
-            setTimeout(() => captureAndSend(true), 100);
-        }, 300);
+
+        // Verification phase (wait for DOM/URL to react)
+        setTimeout(() => {
+            cursor.remove();
+            updateHUD('idle');
+
+            const currentTree = JSON.stringify(getSimplifiedAccessibilityTree());
+            const currentUrl = window.location.href;
+            const changed = currentTree !== beforeState || currentUrl !== beforeUrl;
+
+            if (changed) {
+                safeSendMessage({ type: 'status', action: 'click_element', message: 'success', detail: `Clicked ${id}. State changed.` });
+                setTimeout(() => captureAndSend(true), 100);
+            } else {
+                console.warn(`🕵️ Dead-end detected for ${id}`);
+                safeSendMessage({ 
+                    type: 'status', 
+                    action: 'click_element', 
+                    message: 'warning', 
+                    detail: `Clicked ${id} but no change was detected in the UI. The button might be disabled, or the action might require a different trigger.` 
+                });
+            }
+        }, 800); 
     }, 500);
 }
 
 function typeTextIntoElement(id, text) {
     const el = document.querySelector(`[data-gemini-id="${id}"]`);
     if (!el) { updateHUD('idle'); return; }
-    
+
     el.focus();
-    
+
     if (el.tagName.toLowerCase() === 'select') {
-        // Special handling for <select> elements
         let optionToSelect = Array.from(el.options).find(opt => 
             opt.value.toLowerCase() === text.toLowerCase() || 
             opt.text.toLowerCase().includes(text.toLowerCase())
         );
-        
+
         if (optionToSelect) {
             el.value = optionToSelect.value;
-            console.log(`✅ Selected option: ${optionToSelect.text}`);
-        } else {
-            console.warn(`⚠️ Could not find option matching: ${text}`);
         }
     } else {
-        // Standard handling for input/textarea
         el.value = text;
     }
-    
+
     el.dispatchEvent(new Event('input', { bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
-    
+
     setTimeout(() => { 
         updateHUD('idle'); 
+        // For typing, we usually just report success as 'change' is the goal
         safeSendMessage({ 
             type: 'status', 
             action: 'type_text', 
             message: 'success', 
-            detail: `Interacted with ${id}` 
+            detail: `Interacted with ${id}. Value set to: ${text}` 
         }); 
-        // Immediate sync after typing
         setTimeout(() => captureAndSend(true), 100);
     }, 300);
 }
