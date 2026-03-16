@@ -700,8 +700,20 @@ function updateHUD(status, extra = {}) {
         if (confirmBtn) confirmBtn.style.display = 'block';
         if (confirmDetail) {
             if (extra.action) {
-                confirmDetail.innerText = extra.action;
-                confirmDetail.style.display = 'block';
+                const actionText = extra.action.toLowerCase();
+                const isConfirmation = /\b(confirm|proceed|yes|ok)\b/i.test(actionText);
+                const isDestructiveStarter = /\b(reset|clear|delete|destroy|drop)\b/i.test(actionText);
+                
+                // Only flag as "needs confirmation" if it's a confirming keyword AND NOT a destructive starter.
+                // This allows clicking "Clear Cache" (destructive starter) but blocks "Confirm" (confirmation).
+                const needsConfirmation = isConfirmation && !isDestructiveStarter;
+
+                if (needsConfirmation) {
+                    confirmDetail.innerText = extra.action;
+                    confirmDetail.style.display = 'block';
+                } else {
+                    confirmDetail.style.display = 'none';
+                }
             } else {
                 confirmDetail.style.display = 'none';
             }
@@ -1092,12 +1104,18 @@ function getSimplifiedAccessibilityTree() {
             const finalId = idCounts[baseId] > 1 ? `${baseId}-${idCounts[baseId]}` : baseId;
 
             const label = findLabelForElement(el).trim();
+            const textLower = el.innerText.toLowerCase();
+            const labelLower = label.toLowerCase();
+            const isConfirmation = /\b(confirm|proceed|yes|ok)\b/i.test(label) || /\b(confirm|proceed|yes|ok)\b/i.test(el.innerText);
+            const isDestructiveStarter = /\b(reset|clear|delete|destroy|drop)\b/i.test(label) || /\b(reset|clear|delete|destroy|drop)\b/i.test(el.innerText);
+            const needsConfirmation = isConfirmation && !isDestructiveStarter;
 
             let elementData = {
                 id: finalId,
                 tagName: el.tagName.toLowerCase(),
                 label: label || "Unnamed Element",
                 role: el.getAttribute('role') || el.type || "",
+                needsConfirmation: needsConfirmation,
                 x: Math.round(rect.left + rect.width / 2),
                 y: Math.round(rect.top + rect.height / 2)
             };

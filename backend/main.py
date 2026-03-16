@@ -210,6 +210,7 @@ async def websocket_endpoint(websocket: WebSocket):
             stats = {"audio_chunks_sent": 0}
             plan_state = {"steps": [], "active_index": 0, "output_buffer": ""}
             silent_mode = False
+            notified_confirmation_ids = set() # Track for proactive alerts
             
             # Synchronization event: only send input when no tool calls are pending
             ready_for_input = asyncio.Event()
@@ -219,6 +220,7 @@ async def websocket_endpoint(websocket: WebSocket):
             audio_input_queue = asyncio.Queue()
             video_input_queue = asyncio.Queue()
             text_input_queue = asyncio.Queue()
+            emergency_text_queue = asyncio.Queue() # Bypass sync lock for alerts
 
             # Task: Dispatch audio from queue to Gemini
             async def dispatch_audio():
@@ -249,6 +251,15 @@ async def websocket_endpoint(websocket: WebSocket):
                     while True:
                         text = await text_input_queue.get()
                         await ready_for_input.wait() # VIDEO/DOM ARE STILL BLOCKED
+                        await gemini_session.send_realtime_input(text=text)
+                except asyncio.CancelledError:
+                    pass
+
+            async def dispatch_emergency_text():
+                try:
+                    while True:
+                        text = await emergency_text_queue.get()
+                        # Emergency messages bypass the ready_for_input wait
                         await gemini_session.send_realtime_input(text=text)
                 except asyncio.CancelledError:
                     pass
@@ -299,12 +310,37 @@ async def websocket_endpoint(websocket: WebSocket):
                                 text_msg = f"URL: {page_state.get('url')}\n"
                                 if dom_update['type'] == 'full':
                                     text_msg += f"FULL ACCESSIBILITY TREE UPDATE:\n{json.dumps(dom_update['tree'], indent=2)}"
+                                    # Proactive Detection: Scan full tree
+                                    conf_elements = [el for el in dom_update['tree'] if el.get('needsConfirmation')]
+                                    if conf_elements:
+                                        new_conf_ids = [el['id'] for el in conf_elements if el['id'] not in notified_confirmation_ids]
+                                        if new_conf_ids:
+                                            labels = [el.get('label', 'Unnamed') for el in conf_elements]
+                                            print(f"📣 PROACTIVE DETECTION: Found confirmation buttons: {labels}")
+                                            prompt = f"[SYSTEM ALERT]: Confirmation page detected with buttons: {', '.join(labels)}. STOP and ask the user: 'I see a confirmation required for this. Should I proceed?'"
+                                            await emergency_text_queue.put(prompt)
+                                            for cid in new_conf_ids: notified_confirmation_ids.add(cid)
                                 else:
                                     diff = dom_update['diff']
                                     text_msg += "UI CHANGES DETECTED:\n"
                                     if diff['added']: text_msg += f"- ADDED: {json.dumps(diff['added'])}\n"
                                     if diff['removed']: text_msg += f"- REMOVED IDs: {', '.join(diff['removed'])}\n"
                                     if diff['updated']: text_msg += f"- UPDATED: {json.dumps(diff['updated'])}\n"
+                                    
+                                    # Proactive Detection: Scan diff for added/updated
+                                    new_conf_els = [el for el in diff['added'] if el.get('needsConfirmation')]
+                                    new_conf_els += [el for el in diff['updated'] if el.get('changes', {}).get('needsConfirmation')]
+                                    if new_conf_els:
+                                        new_ids = [el['id'] for el in new_conf_els if el['id'] not in notified_confirmation_ids]
+                                        if new_ids:
+                                            labels = [el.get('label') or el.get('changes', {}).get('label', 'button') for el in new_conf_els]
+                                            print(f"📣 PROACTIVE DETECTION (Diff): Found confirmation buttons: {labels}")
+                                            prompt = f"[SYSTEM ALERT]: I just noticed a confirmation modal appeared. Ask the user verbally: 'Should I proceed with the confirmation?'"
+                                            await emergency_text_queue.put(prompt)
+                                            for cid in new_ids: notified_confirmation_ids.add(cid)
+                                    
+                                    # Cleanup removed IDs from notification set
+                                    for rid in diff['removed']: notified_confirmation_ids.discard(rid)
                                 
                                 await text_input_queue.put(text_msg)
                             
@@ -522,7 +558,8 @@ async def websocket_endpoint(websocket: WebSocket):
                 asyncio.create_task(receive_from_gemini()),
                 asyncio.create_task(dispatch_audio()),
                 asyncio.create_task(dispatch_video()),
-                asyncio.create_task(dispatch_text())
+                asyncio.create_task(dispatch_text()),
+                asyncio.create_task(dispatch_emergency_text())
             ]
             
             # Wait for either receiver to finish (extension disconnect or Gemini session end)
