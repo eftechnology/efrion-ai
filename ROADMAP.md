@@ -1,39 +1,38 @@
 # ERP AI Autopilot - Roadmap & Status
 
-## 🚀 Current Status: Stable v1.6 (Persistent & Cross-Page)
-The ERP AI Autopilot is now a fully persistent multimodal agent. It can maintain its internal state and task checklists across page reloads and navigations, enabling complex, multi-page ERP workflows.
+## 🚀 Current Status: Stable v1.7 (Self-Correcting & Semantic)
+The ERP AI Autopilot is now capable of self-correcting when actions fail and features a much deeper semantic understanding of complex ERP forms through advanced label detection and proximity analysis.
 
 ---
 
-## ✅ Recently Completed Updates (v1.6)
+## ✅ Recently Completed Updates (v1.7)
 
 ### 🏎️ Performance & Latency
-- **Advanced DOM Diffing**: Refined the diffing logic to track spatial movement (X/Y shifts) and dynamic select option changes, ensuring 100% accuracy with minimal bandwidth.
-- **Event-Driven Syncing**: Implemented immediate UI synchronization upon action completion or DOM mutation.
+- **Event-Driven Syncing**: Refined debounce and action-completion sync for near-instant UI updates.
+- **Advanced DOM Diffing**: Precision tracking of spatial movement and select option changes.
 
 ### 🏗️ Architectural Robustness
-- **Cross-Page Persistence**: Implemented a stateful background manager that preserves the AI's plan and session state during URL navigations and page refreshes.
-- **Protocol Synchronization**: Robust handling of tool acknowledgments to prevent Gemini Live API deadlocks.
+- **Dead-End Detection**: Implemented state-based verification for AI actions. The agent now detects if a click failed to change the UI and receives automated feedback to self-correct.
+- **Semantic Context Enrichment**: Implemented multi-strategy label detection (ARIA, standard labels, and proximity analysis) to provide the AI with perfectly accurate names for form fields.
 
 ### 👤 User Experience (UX)
-- **Automatic HUD Restoration**: The AI HUD and multi-step checklist automatically rebuild themselves on new pages if a session is active.
-- **Dual-Confirmation System**: Refined the safety lock with physical HUD buttons and verbal affirmation memory.
+- **Cross-Page Persistence**: Full plan and session state recovery across page reloads and navigations.
+- **Robust Field Interaction**: Enhanced `type_text` tool to support selecting options from dropdowns via visible text or internal values.
 
 ---
 
 ## 🛠️ Upcoming Tasks (Short-Term)
 
-### 1. Dead-End Detection & Recovery
-- **Self-Correction**: Teach the AI to recognize when an action (like a click) failed to change the page state and automatically try an alternative strategy.
-- **Feedback Loop**: Provide the AI with explicit "No change detected" signals.
-
-### 2. Multi-Step Planning (Advanced)
+### 1. Multi-Step Planning (Advanced)
 - **Undo/Redo**: Allow the user to "Undo" the last AI action or "Cancel" the remaining steps in a plan via voice command.
-- **Sub-task Branching**: Enable the AI to pivot its plan dynamically based on unexpected data discovered during a task.
+- **Branching Logic**: Enable the AI to suggest alternative plans if data discovered on a page contradicts its initial assumptions.
 
-### 3. Contextual Enrichment
-- **Form Label Association**: Implement advanced proximity analysis to link input fields with their visible labels in complex ERP forms.
-- **OCR Fallback**: Use Gemini's vision to interact with non-text elements (icons, custom canvases) that lack ARIA labels.
+### 2. UI/UX Polishing
+- **Target Highlighting**: Improve the `highlight_element` tool with animated SVG pointers for better visibility.
+- **HUD Miniaturization**: Allow the HUD to be minimized or collapsed to save screen space while remaining active.
+
+### 3. Intelligence
+- **OCR Fallback**: Use Gemini's visual analysis to identify and label icon-only buttons or custom canvas-based UI elements that lack semantic HTML.
 
 ---
 
