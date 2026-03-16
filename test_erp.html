@@ -71,12 +71,13 @@
         h3 { margin-top: 0; color: #0f172a; }
         .form-group { margin-bottom: 1rem; }
         label { display: block; font-size: 0.875rem; font-weight: 500; margin-bottom: 0.25rem; }
-        input, select {
+        input, select, textarea {
             width: 100%;
             padding: 0.625rem;
             border: 1px solid #d1d5db;
             border-radius: 6px;
             font-size: 0.875rem;
+            box-sizing: border-box;
         }
         .btn {
             display: inline-block;
@@ -111,7 +112,7 @@
 
 <header>
     <div style="display: flex; align-items: center; gap: 10px;">
-        <div style="width: 32px; height: 32px; background: var(--primary); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: bold;">A</div>
+        <div style="width: 32px; height: 32px; background: var(--primary); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: bold; color: white;">A</div>
         <h2 style="margin: 0; font-size: 1.25rem;">Acme Pro ERP</h2>
     </div>
     <nav class="nav-tabs">
@@ -156,7 +157,7 @@
                         <tr><td>#101</td><td>John Doe</td><td><button class="btn btn-ghost" onclick="alert('Viewing #101')">View</button></td></tr>
                     </tbody>
                 </table>
-             section>
+            </section>
 
         <!-- Invoices -->
         <section id="sec-invoices">
@@ -177,7 +178,7 @@
                 </div>
                 <div class="form-group">
                     <label>Notes</label>
-                    <textarea id="inv-notes" style="width: 100%; border-radius: 6px; border: 1px solid #d1d5db; padding: 0.5rem;" rows="3"></textarea>
+                    <textarea id="inv-notes" rows="3"></textarea>
                 </div>
                 <button class="btn btn-success" id="inv-submit" onclick="submitInvoice()">Submit Invoice</button>
             </div>
@@ -209,6 +210,26 @@
                 </div>
             </div>
         </section>
+
+        <!-- Settings -->
+        <section id="sec-settings">
+            <div class="card">
+                <h3>User Settings</h3>
+                <div class="form-group">
+                    <label>Profile Name</label>
+                    <input type="text" id="set-name" value="Admin User">
+                </div>
+                <div class="form-group">
+                    <label>Notification Preference</label>
+                    <select id="set-notify">
+                        <option value="all">All Notifications</option>
+                        <option value="urgent">Urgent Only</option>
+                        <option value="none">None</option>
+                    </select>
+                </div>
+                <button class="btn btn-primary" id="set-save" onclick="alert('Settings Saved!')">Save Preferences</button>
+            </div>
+        </section>
     </main>
 
     <aside class="sidebar">
@@ -226,10 +247,19 @@
 
 <script>
     function showTab(tabId) {
+        const section = document.getElementById('sec-' + tabId);
+        const tab = document.getElementById('tab-' + tabId);
+        
+        if (!section || !tab) {
+            console.error(`❌ Missing elements for tab: ${tabId}`);
+            return;
+        }
+
         document.querySelectorAll('.main-content section').forEach(s => s.classList.remove('active'));
         document.querySelectorAll('.nav-tabs button').forEach(b => b.classList.remove('active'));
-        document.getElementById('sec-' + tabId).classList.add('active');
-        document.getElementById('tab-' + tabId).classList.add('active');
+        
+        section.classList.add('active');
+        tab.classList.add('active');
         console.log(`🌐 Switched to tab: ${tabId}`);
     }
 
