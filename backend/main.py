@@ -275,6 +275,25 @@ async def websocket_endpoint(websocket: WebSocket):
                                 await video_input_queue.put(base64.b64decode(image_data))
 
                             if dom_update:
+                                # NAVIGATION FALLBACK: If a tool is pending and we see a full DOM update or URL change,
+                                # it means the page likely reloaded/changed before the action could report back.
+                                if pending_tool_calls and dom_update.get('type') == 'full':
+                                    print("🌐 Navigation detected while tool pending. Auto-resolving as success.")
+                                    function_responses = []
+                                    for call_id, tool_name in list(pending_tool_calls.items()):
+                                        function_responses.append(
+                                            types.FunctionResponse(
+                                                name=tool_name,
+                                                id=call_id,
+                                                response={"result": "success", "detail": "Navigation occurred."}
+                                            )
+                                        )
+                                        del pending_tool_calls[call_id]
+                                    
+                                    if function_responses:
+                                        await gemini_session.send_tool_response(function_responses=function_responses)
+                                        ready_for_input.set()
+
                                 text_msg = f"URL: {page_state.get('url')}\n"
                                 if dom_update['type'] == 'full':
                                     text_msg += f"FULL ACCESSIBILITY TREE UPDATE:\n{json.dumps(dom_update['tree'], indent=2)}"
@@ -472,11 +491,17 @@ async def websocket_endpoint(websocket: WebSocket):
                                         elif el_id in confirmed_ids:
                                             print(f"⏩ Auto-Releasing confirmed action: {name}({el_id})")
                                         
-                                        # ALWAYS ACKNOWLEDGE IMMEDIATELY to prevent Error 1008
-                                        function_responses.append(types.FunctionResponse(
-                                            name=name, id=function_call.id,
-                                            response={"result": f"Execution started for {name}."}
-                                        ))
+                                        # Sensitive tools MUST block input until they report success or failure
+                                        if name in sensitive_tools or name == "scroll_page":
+                                            print(f"⏸️ Blocking input for {name}. Waiting for extension status...")
+                                            ready_for_input.clear()
+                                            pending_tool_calls[function_call.id] = name
+                                        else:
+                                            # Non-sensitive tools (like set_plan) were handled above or get immediate ack
+                                            function_responses.append(types.FunctionResponse(
+                                                name=name, id=function_call.id,
+                                                response={"result": f"Execution started for {name}."}
+                                            ))
                                         
                                         await websocket.send_json(command_payload)
                                 

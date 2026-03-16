@@ -1187,45 +1187,57 @@ async function startRecording() {
         workletNode = new AudioWorkletNode(audioInputContext, 'recorder-processor');
 
         let totalSentChunks = 0;
+        let rawBuffer = new Float32Array(0);
+        const RAW_BUFFER_THRESHOLD = 4096; // Accumulate more raw samples before downsampling
 
         workletNode.port.onmessage = (event) => {
             if (!audioInputContext) return; // Safety check for race condition during cleanup
             const msg = event.data;
 
             if (msg.type === 'pcm_data') {
-                const inputChannel = msg.buffer; // Raw Float32Array from worklet
+                const inputChannel = msg.buffer; 
 
-                // Downsample to 16kHz
-                const downsampled = downsampleBuffer(inputChannel, audioInputContext.sampleRate, 16000);
+                // 1. Accumulate raw samples
+                const newRawBuffer = new Float32Array(rawBuffer.length + inputChannel.length);
+                newRawBuffer.set(rawBuffer);
+                newRawBuffer.set(inputChannel, rawBuffer.length);
+                rawBuffer = newRawBuffer;
 
-                // Convert to PCM16
-                const pcm16Buffer = convertFloat32ToInt16(downsampled);
-                const pcm16Array = new Int16Array(pcm16Buffer);
+                // 2. Process only when we have enough raw data
+                if (rawBuffer.length >= RAW_BUFFER_THRESHOLD) {
+                    // Downsample once for the larger block
+                    const downsampled = downsampleBuffer(rawBuffer, audioInputContext.sampleRate, 16000);
+                    const pcm16Buffer = convertFloat32ToInt16(downsampled);
+                    const pcm16Array = new Int16Array(pcm16Buffer);
 
-                let maxVal = 0;
-                for (let j = 0; j < pcm16Array.length; j++) {
-                    const abs = Math.abs(pcm16Array[j]);
-                    if (abs > maxVal) maxVal = abs;
-                }
-                const volumePercent = Math.min(100, (maxVal / 32768) * 100);
+                    // Volume calculation for HUD
+                    let maxVal = 0;
+                    for (let j = 0; j < pcm16Array.length; j++) {
+                        const abs = Math.abs(pcm16Array[j]);
+                        if (abs > maxVal) maxVal = abs;
+                    }
+                    const volumePercent = Math.min(100, (maxVal / 32768) * 100);
 
-                // 5-bar equalizer
-                const barWeights = [0.55, 0.8, 1.0, 0.8, 0.55];
-                for (let b = 1; b <= 5; b++) {
-                    const bar = erpShadowRoot?.getElementById(`vol-b${b}`);
-                    if (!bar) continue;
-                    const noise = 1 + (Math.random() * 0.3 - 0.15);
-                    const h = Math.max(3, volumePercent * barWeights[b - 1] * noise * 0.2);
-                    bar.style.height = `${h}px`;
-                    bar.style.backgroundColor = volumePercent > 80 ? '#ef4444' : volumePercent > 50 ? '#f59e0b' : '#10b981';
-                }
+                    // Equalizer visualization
+                    const barWeights = [0.55, 0.8, 1.0, 0.8, 0.55];
+                    for (let b = 1; b <= 5; b++) {
+                        const bar = erpShadowRoot?.getElementById(`vol-b${b}`);
+                        if (!bar) continue;
+                        const noise = 1 + (Math.random() * 0.3 - 0.15);
+                        const h = Math.max(3, volumePercent * barWeights[b - 1] * noise * 0.2);
+                        bar.style.height = `${h}px`;
+                        bar.style.backgroundColor = volumePercent > 80 ? '#ef4444' : volumePercent > 50 ? '#f59e0b' : '#10b981';
+                    }
 
-                const base64Audio = arrayBufferToBase64(pcm16Buffer);
-                safeSendMessage({ action: 'send_audio', data: base64Audio });
-
-                totalSentChunks++;
-                if (totalSentChunks % 20 === 0) {
-                    console.log(`🎤 Audio Stream: Sent ${totalSentChunks} chunks (Vol: ${volumePercent.toFixed(1)}%)`);
+                    const base64Audio = arrayBufferToBase64(pcm16Buffer);
+                    safeSendMessage({ action: 'send_audio', data: base64Audio });
+                    
+                    rawBuffer = new Float32Array(0); // Clear raw buffer
+                    totalSentChunks++;
+                    
+                    if (totalSentChunks % 5 === 0) {
+                        console.log(`🎤 Audio Stream: Sent ${totalSentChunks} high-fidelity chunks (Vol: ${volumePercent.toFixed(1)}%)`);
+                    }
                 }
             }
         };
@@ -1477,8 +1489,8 @@ function highlightElement(id) {
 // ============================================================================
 
 let audioContext;
-let audioQueue = [];
 let nextStartTime = 0;
+let activeSources = 0;
 
 function initAudioContext() {
     if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
@@ -1502,28 +1514,50 @@ function playAudio(base64Data, mimeType) {
         for (let i = 0; i < int16Array.length; i++) float32Array[i] = int16Array[i] / 32768.0;
         const buffer = audioContext.createBuffer(1, float32Array.length, 24000);
         buffer.getChannelData(0).set(float32Array);
-        audioQueue.push(buffer);
-        playNextInQueue();
+        
+        scheduleBuffer(buffer);
     } catch (e) { console.error("Error decoding audio:", e); }
 }
 
-function playNextInQueue() {
-    if (audioQueue.length === 0 || (isPlaying && audioContext.currentTime < nextStartTime)) return;
-    isPlaying = true;
-    const buffer = audioQueue.shift();
+function scheduleBuffer(buffer) {
+    const now = audioContext.currentTime;
     const source = audioContext.createBufferSource();
     source.buffer = buffer;
     source.connect(audioContext.destination);
-    if (nextStartTime < audioContext.currentTime) nextStartTime = audioContext.currentTime;
+
+    // Pipeline Logic: 
+    // If the pipeline is empty or late, start with a 50ms lookahead to prevent jitter.
+    // Otherwise, schedule exactly at the end of the previous buffer (nextStartTime).
+    const LOOKAHEAD = 0.05;
+    if (nextStartTime < now + 0.01) {
+        nextStartTime = now + LOOKAHEAD;
+        console.log("🎺 Starting new speech burst");
+    }
+
     source.start(nextStartTime);
-    nextStartTime += buffer.duration;
+    
+    // Update state
+    if (activeSources === 0) {
+        isPlaying = true;
+        updateHUD('speaking');
+        safeSendMessage({ action: 'play_audio' });
+    }
+    activeSources++;
+    
+    const duration = buffer.duration;
+    const currentChunkEndTime = nextStartTime;
+    nextStartTime += duration;
+
     source.onended = () => {
-        if (audioQueue.length === 0) { 
-            isPlaying = false; 
+        activeSources--;
+        if (activeSources <= 0) {
+            activeSources = 0;
+            isPlaying = false;
             lastSpeechEndTime = Date.now();
-            nextStartTime = 0; 
-            updateHUD('idle'); 
-        } 
-        else { playNextInQueue(); }
+            nextStartTime = 0;
+            updateHUD('idle');
+            safeSendMessage({ action: 'stop_audio' });
+            console.log("🤐 Speech burst finished");
+        }
     };
 }
