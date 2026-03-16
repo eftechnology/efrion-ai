@@ -207,6 +207,7 @@ async def websocket_endpoint(websocket: WebSocket):
             confirmed_ids = set()
             stats = {"audio_chunks_sent": 0}
             plan_state = {"steps": [], "active_index": 0, "output_buffer": ""}
+            silent_mode = False
             
             # Synchronization event: only send input when no tool calls are pending
             ready_for_input = asyncio.Event()
@@ -294,6 +295,11 @@ async def websocket_endpoint(websocket: WebSocket):
                                     await websocket.send_json(cmd)
                                 locked_commands.clear()
                                 await websocket.send_json({"type": "command", "command": "hide_confirm_ui"})
+
+                        elif message.get("type") == "silent_mode":
+                            nonlocal silent_mode
+                            silent_mode = message.get("enabled", False)
+                            print(f"🔇 Silent mode: {'ON' if silent_mode else 'OFF'}")
 
                         elif message.get("type") == "status":
                             print(f"📡 Extension Status: {message.get('message')} - {message.get('detail', '')}")
@@ -409,8 +415,9 @@ async def websocket_endpoint(websocket: WebSocket):
                                 if server_content.model_turn:
                                     for part in server_content.model_turn.parts:
                                         if part.inline_data:
-                                            audio_data = base64.b64encode(part.inline_data.data).decode('utf-8')
-                                            await websocket.send_json({"type": "audio", "data": audio_data, "mime_type": part.inline_data.mime_type})
+                                            if not silent_mode:
+                                                audio_data = base64.b64encode(part.inline_data.data).decode('utf-8')
+                                                await websocket.send_json({"type": "audio", "data": audio_data, "mime_type": part.inline_data.mime_type})
 
                             # Handle Function Calls
                             if response.tool_call is not None:

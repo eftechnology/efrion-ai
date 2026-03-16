@@ -2,6 +2,19 @@
 
 ---
 
+## v2.2 — Silent Mode & Accessibility Fix (2026-03-16)
+
+### New Features
+- **Silent mode toggle**: speaker button in HUD mutes all AI audio output; icon switches between speaker/muted states with visual indicator
+- Backend-aware silence: `silent_mode` flag tracked per-session on the server; audio chunks from Gemini are dropped server-side when muted (not just suppressed in the browser)
+
+### Improvements
+- **`set_plan` silent tool**: replaced fragile text-based `PLAN:` parsing with a proper function call — AI calls `set_plan(steps=[...])` silently, HUD updates without any spoken announcement
+- System prompt updated: AI no longer narrates each step during execution; speaks only a brief summary after all steps complete
+- **Accessibility tree label fix**: heading siblings (`<h3>`, `<h2>`, etc.) are no longer used as labels for adjacent buttons/links — buttons now always report their own text (e.g. `"+ Add Employee"` instead of `"Employee Directory"`)
+
+---
+
 ## v2.1 — Conversation History & Plan Window (2026-03-16)
 
 ### New Features

@@ -95,6 +95,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             } catch (e) {}
         });
         return false; 
+    } else if (message.type === 'silent_mode') {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify(message));
+        }
+        return false;
     } else if (message.type === 'status') {
         if (ws && ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify(message));

@@ -600,6 +600,7 @@ function createHUD() {
             muteBtn.title = 'Toggle Silent Mode';
             muteIcon.innerHTML = '<path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/>';
         }
+        safeSendMessage({ type: 'silent_mode', enabled: isSilentMode });
     });
 
     console.log("✅ HUD created successfully in Shadow DOM");
@@ -1058,10 +1059,14 @@ function findLabelForElement(el) {
     const parentLabel = el.closest('label');
     if (parentLabel) return parentLabel.innerText;
 
-    // 6. Proximity Analysis: Look for a preceding text node or label-like sibling
-    let prev = el.previousElementSibling;
-    if (prev && (prev.tagName === 'LABEL' || prev.tagName.match(/^H[1-6]$/))) {
-        return prev.innerText;
+    // 6. Proximity Analysis: only for form inputs, not for buttons/links which have their own text.
+    // Headings are section titles, not field labels — skip them here.
+    const isFormField = ['input', 'select', 'textarea'].includes(el.tagName.toLowerCase());
+    if (isFormField) {
+        let prev = el.previousElementSibling;
+        if (prev && prev.tagName === 'LABEL') {
+            return prev.innerText;
+        }
     }
 
     // 7. Last resort: use the element's own text if it's a button/link
@@ -1077,7 +1082,7 @@ function getSimplifiedAccessibilityTree() {
 
     elements.forEach((el) => {
         const rect = el.getBoundingClientRect();
-        const isVisible = rect.width > 0 && rect.height > 0 && 
+        const isVisible = rect.width > 0 && rect.height > 0 &&
                          rect.top >= 0 && rect.left >= 0 &&
                          rect.bottom <= window.innerHeight && rect.right <= window.innerWidth;
 
