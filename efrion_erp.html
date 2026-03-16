@@ -345,6 +345,49 @@
             .container { grid-template-columns: 1fr; }
             .sidebar { display: none; }
         }
+        /* Danger Zone Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-overlay.active { display: flex; }
+        .modal {
+            background: var(--card);
+            border-radius: 12px;
+            padding: 2rem;
+            max-width: 420px;
+            width: 90%;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            border-top: 4px solid var(--danger);
+        }
+        .modal-icon {
+            font-size: 2.5rem;
+            text-align: center;
+            margin-bottom: 1rem;
+        }
+        .modal h3 {
+            margin: 0 0 0.5rem;
+            color: var(--danger);
+            font-size: 1.125rem;
+            text-align: center;
+        }
+        .modal p {
+            margin: 0 0 1.5rem;
+            color: #64748b;
+            font-size: 0.875rem;
+            text-align: center;
+            line-height: 1.5;
+        }
+        .modal-actions {
+            display: flex;
+            gap: 0.75rem;
+            justify-content: flex-end;
+        }
     </style>
 </head>
 <body>
@@ -1257,11 +1300,32 @@
     }
 
     function confirmDangerAction(message) {
-        if (confirm(`⚠️ ${message}\n\nThis action cannot be undone.`)) {
+        const overlay = document.getElementById('danger-modal');
+        document.getElementById('danger-modal-message').textContent = message;
+        overlay.classList.add('active');
+
+        document.getElementById('danger-modal-confirm').onclick = () => {
+            overlay.classList.remove('active');
             showToast('Action completed.', 'info');
-        }
+        };
+        document.getElementById('danger-modal-cancel').onclick = () => {
+            overlay.classList.remove('active');
+        };
     }
 </script>
+
+<div class="modal-overlay" id="danger-modal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="danger-modal-title">
+        <div class="modal-icon">⚠️</div>
+        <h3 id="danger-modal-title">Are you sure?</h3>
+        <p id="danger-modal-message"></p>
+        <p style="margin-top: -1rem;">This action cannot be undone.</p>
+        <div class="modal-actions">
+            <button class="btn btn-secondary btn-sm" id="danger-modal-cancel">Cancel</button>
+            <button class="btn btn-danger btn-sm" id="danger-modal-confirm">Confirm</button>
+        </div>
+    </div>
+</div>
 
 </body>
 </html>
