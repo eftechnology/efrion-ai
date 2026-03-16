@@ -11,6 +11,8 @@ const POST_SPEECH_COOLDOWN_MS = 800; // Lowered from 5000 to improve responsiven
 let isCoolingDown = false;
 let lastTreeJson = ''; // Used to track DOM changes
 let actionHistory = []; // Stack of { type, id, oldValue, url } for undo
+let conversationHistory = []; // { source, text, ts }
+let chatPanelManuallyClosed = false;
 
 function pushToHistory(action) {
     actionHistory.push({ ...action, timestamp: Date.now() });
@@ -139,7 +141,8 @@ function createHUD() {
     hud.style.cursor = 'grab';
     hud.style.userSelect = 'none';
     hud.style.maxWidth = '600px';
-    hud.style.overflow = 'hidden';
+    hud.style.overflow = 'visible';
+    hud.style.position = 'relative';
 
     hud.innerHTML = `
         <style>
@@ -223,6 +226,7 @@ function createHUD() {
             gap: 0;
             border-radius: 50%;
             cursor: pointer;
+            overflow: hidden;
           }
           #erp-ai-hud.mini #erp-ai-status-text,
           #erp-ai-hud.mini #erp-ai-transcript,
@@ -369,13 +373,74 @@ function createHUD() {
           }
           .plan-item.done .plan-step-num { background: rgba(16,185,129,0.2); color: #10b981; }
           .plan-item.active .plan-step-num { background: rgba(255,255,255,0.9); color: #111; }
+
+          #erp-ai-chat-btn {
+            background: transparent; border: none; color: #aaa; cursor: pointer;
+            padding: 5px; display: none; align-items: center; justify-content: center;
+            transition: color 0.2s, transform 0.2s;
+          }
+          #erp-ai-chat-btn:hover { color: #fff; transform: scale(1.1); }
+          #erp-ai-chat-btn.active { color: #60a5fa; }
+
+          #erp-ai-chat-panel {
+            position: absolute; bottom: 100%; left: 0; margin-bottom: 15px;
+            background: rgba(20, 20, 20, 0.90);
+            backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+            border: 1px solid rgba(255,255,255,0.1); border-radius: 16px;
+            padding: 14px 14px 10px; width: 320px; max-height: 360px;
+            display: none; flex-direction: column;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.55);
+            animation: erp-slide-up 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+          }
+          #erp-ai-chat-panel-header {
+            display: flex; align-items: center; justify-content: space-between;
+            margin-bottom: 10px; flex-shrink: 0;
+          }
+          #erp-ai-chat-panel-title {
+            font-size: 11px; font-weight: 700; text-transform: uppercase;
+            letter-spacing: 0.4px; color: #888;
+          }
+          #erp-ai-chat-messages {
+            overflow-y: auto; display: flex; flex-direction: column;
+            gap: 8px; max-height: 290px; padding-right: 4px;
+            scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.12) transparent;
+          }
+          #erp-ai-chat-messages::-webkit-scrollbar { width: 4px; }
+          #erp-ai-chat-messages::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.14); border-radius: 2px; }
+
+          .chat-msg { display: flex; flex-direction: column; max-width: 85%; animation: erp-fade-in 0.2s ease; }
+          .chat-msg.user  { align-self: flex-end;  align-items: flex-end; }
+          .chat-msg.ai    { align-self: flex-start; align-items: flex-start; }
+          .chat-msg.system { align-self: center; align-items: center; max-width: 100%; }
+
+          .chat-msg-bubble { padding: 7px 11px; border-radius: 12px; font-size: 12.5px; line-height: 1.45; word-break: break-word; }
+          .chat-msg.user   .chat-msg-bubble { background: rgba(37,99,235,0.28); border: 1px solid rgba(96,165,250,0.25); color: #e0eaff; border-bottom-right-radius: 4px; }
+          .chat-msg.ai     .chat-msg-bubble { background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.08); color: #ddd; border-bottom-left-radius: 4px; }
+          .chat-msg.system .chat-msg-bubble { background: rgba(255,193,7,0.1); border: 1px solid rgba(255,193,7,0.2); color: #fcd34d; border-radius: 10px; font-size: 11.5px; }
+
+          .chat-msg-meta { font-size: 10px; color: rgba(255,255,255,0.3); margin-top: 3px; padding: 0 3px; }
+
+          #erp-ai-hud.mini #erp-ai-chat-btn,
+          #erp-ai-hud.mini #erp-ai-chat-panel { display: none !important; }
         </style>
+
+        <div id="erp-ai-chat-panel">
+            <div id="erp-ai-chat-panel-header">
+                <span id="erp-ai-chat-panel-title">Conversation</span>
+            </div>
+            <div id="erp-ai-chat-messages"></div>
+        </div>
 
         <div id="erp-ai-plan-container"></div>
 
         <button id="erp-ai-minimize-btn" title="Minimize/Expand">
             <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
                 <path d="M19 13H5v-2h14v2z"/>
+            </svg>
+        </button>
+        <button id="erp-ai-chat-btn" title="Conversation History" class="btn-hover">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z"/>
             </svg>
         </button>
 
@@ -491,6 +556,22 @@ function createHUD() {
         if (confirmDetail) confirmDetail.style.display = 'none';
     });
 
+    const chatBtn = erpShadowRoot.getElementById('erp-ai-chat-btn');
+    const chatPanel = erpShadowRoot.getElementById('erp-ai-chat-panel');
+    chatBtn.addEventListener('click', () => {
+        const isOpen = chatPanel.style.display === 'flex';
+        if (isOpen) {
+            chatPanel.style.display = 'none';
+            chatBtn.classList.remove('active');
+            chatPanelManuallyClosed = true;
+        } else {
+            chatPanel.style.display = 'flex';
+            chatBtn.classList.add('active');
+            chatPanelManuallyClosed = false;
+            renderChatPanel();
+        }
+    });
+
     console.log("✅ HUD created successfully in Shadow DOM");
     updateHUD('offline'); // Initial state
 }
@@ -542,6 +623,12 @@ function updateHUD(status, extra = {}) {
         const planContainer = erpShadowRoot.getElementById('erp-ai-plan-container');
         if (planContainer) planContainer.style.display = 'none';
         if (volContainer) volContainer.style.display = 'none';
+        conversationHistory = [];
+        chatPanelManuallyClosed = false;
+        const chatPanel = erpShadowRoot.getElementById('erp-ai-chat-panel');
+        if (chatPanel) chatPanel.style.display = 'none';
+        const chatBtn = erpShadowRoot.getElementById('erp-ai-chat-btn');
+        if (chatBtn) chatBtn.classList.remove('active');
     } else if (status === 'listening') {
         setStatusText(text, 'Listening...');
         indicator.style.backgroundColor = 'var(--color-listening)';
@@ -632,10 +719,50 @@ function updatePlanHUD(steps, activeIndex = 0) {
     `;
 }
 
+function renderChatPanel() {
+    if (!erpShadowRoot) return;
+    const messagesEl = erpShadowRoot.getElementById('erp-ai-chat-messages');
+    if (!messagesEl) return;
+
+    if (conversationHistory.length === 0) {
+        messagesEl.innerHTML = '<div style="text-align:center;color:rgba(255,255,255,0.25);font-size:11px;padding:20px 0;">No messages yet</div>';
+        return;
+    }
+
+    messagesEl.innerHTML = conversationHistory.map(entry => {
+        const cls = entry.source === 'USER' ? 'user' : (entry.source === 'SYSTEM' ? 'system' : 'ai');
+        const label = entry.source === 'USER' ? 'You' : (entry.source === 'SYSTEM' ? 'System' : 'AI');
+        const timeStr = new Date(entry.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const safe = entry.text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        return `<div class="chat-msg ${cls}">
+            <div class="chat-msg-bubble">${safe}</div>
+            <div class="chat-msg-meta">${label} · ${timeStr}</div>
+        </div>`;
+    }).join('');
+
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
 function updateTranscriptHUD(source, transcript) {
     if (!erpShadowRoot) return;
     const el = erpShadowRoot.getElementById('erp-ai-transcript');
     if (!el) return;
+
+    // Push to history
+    conversationHistory.push({ source, text: transcript, ts: Date.now() });
+    if (conversationHistory.length > 100) conversationHistory.shift();
+
+    // Render chat panel (panel stays hidden until chat feature is re-enabled)
+    renderChatPanel();
+
+    // Auto-open on first message (unless user manually closed)
+    // const chatPanel = erpShadowRoot.getElementById('erp-ai-chat-panel');
+    // const chatBtn = erpShadowRoot.getElementById('erp-ai-chat-btn');
+    // if (chatPanel && !chatPanelManuallyClosed && chatPanel.style.display === 'none') {
+    //     chatPanel.style.display = 'flex';
+    //     if (chatBtn) chatBtn.classList.add('active');
+    // }
+
     const prefix = source === 'USER' ? '👤' : (source === 'SYSTEM' ? '🛡️' : '🤖');
     const newText = `${prefix} ${transcript}`;
     const newColor = source === 'USER' ? '#eee' : (source === 'SYSTEM' ? '#FFC107' : '#60a5fa');
