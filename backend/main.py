@@ -153,17 +153,18 @@ async def websocket_endpoint(websocket: WebSocket):
                         "You also receive a textual 'Accessibility Tree' that lists interactive elements and their IDs. "
                         "\n\n"
                         "### OPERATIONAL PROTOCOL:\n"
-                        "1. **Analyze First**: When the user gives a command, look at the screenshot and Accessibility Tree to find the relevant elements. "
+                        "1. **Analyze & Plan**: When the user gives a command, first analyze the screen. "
+                        "You MUST state your plan before taking any action. "
+                        "Format your plan as: 'PLAN: [Step 1], [Step 2], etc.'\n"
                         f"{safety_protocol}"
                         "3. **Tool Selection**: \n"
                         "   - Use `click_element(id)` to click buttons, links, or inputs.\n"
                         "   - Use `type_text(id, text)` to fill out forms. Always click the field first if needed.\n"
                         "   - Use `scroll_page(direction)` if the element you need isn't visible.\n"
-                        "   - Use `navigate_to(url)` to switch between different modules if you know the destination URL.\n"
-                        "   - Use `read_text()` to extract data from the page that isn't in the Accessibility Tree.\n"
-                        "4. **Feedback Loop**: Wait for a status update confirming the action was completed before making the next tool call. "
-                        "5. **Communication**: Be professional, concise, and confirm the actions you are taking over the voice channel. "
-                        "If you are unsure or need clarification, ask the user."
+                        "   - Use `navigate_to(url)` to switch between different modules.\n"
+                        "   - Use `read_text()` to extract data from the page.\n"
+                        "4. **Progress Updates**: After each tool call, briefly state which step you just completed and what is next.\n"
+                        "5. **Communication**: Be professional and concise. If you are unsure or need clarification, ask the user."
                     )
                 )
             ]
@@ -316,7 +317,19 @@ async def websocket_endpoint(websocket: WebSocket):
                                             await websocket.send_json({"type": "command", "command": "hide_confirm_ui"})
 
                                 if server_content.output_transcription and server_content.output_transcription.text:
-                                    await websocket.send_json({"type": "transcription", "source": "MODEL", "text": server_content.output_transcription.text})
+                                    text = server_content.output_transcription.text
+                                    await websocket.send_json({"type": "transcription", "source": "MODEL", "text": text})
+                                    
+                                    # PLAN DETECTION: Extract and forward plan to HUD
+                                    if "PLAN:" in text:
+                                        plan_content = text.split("PLAN:")[1].strip()
+                                        # Clean up steps (handle both comma and dot numbering)
+                                        steps = [s.strip() for s in plan_content.replace(".", ",").split(",") if s.strip()]
+                                        await websocket.send_json({
+                                            "type": "command",
+                                            "command": "update_plan",
+                                            "steps": steps
+                                        })
                                     
                                 if server_content.model_turn:
                                     for part in server_content.model_turn.parts:

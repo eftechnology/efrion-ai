@@ -114,7 +114,36 @@ function createHUD() {
           }
           #erp-ai-confirm-btn:hover { background: #45a049; transform: translateY(-1px); }
           .status-indicator { width: 12px; height: 12px; border-radius: 50%; }
+          
+          #erp-ai-plan-container {
+            position: absolute;
+            bottom: 100%;
+            right: 0;
+            margin-bottom: 15px;
+            background: rgba(34, 34, 34, 0.95);
+            border: 1px solid #444;
+            border-radius: 12px;
+            padding: 15px;
+            width: 250px;
+            display: none;
+            flex-direction: column;
+            gap: 8px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            backdrop-filter: blur(10px);
+          }
+          .plan-item {
+            font-size: 12px;
+            color: #ccc;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+          }
+          .plan-item.done { color: #4CAF50; text-decoration: line-through; }
+          .plan-item.active { color: #fff; font-weight: 600; }
         </style>
+        
+        <div id="erp-ai-plan-container"></div>
+
         <div id="erp-ai-indicator" class="status-indicator" style="background-color: #4CAF50; animation: erp-pulse-green 1.5s infinite;"></div>
         <span id="erp-ai-status-text" style="font-weight: 600; min-width: 90px; color: #eee;">AI Online</span>
         
@@ -218,6 +247,28 @@ function updateHUD(status) {
     }
 }
 
+function updatePlanHUD(steps) {
+    if (!erpShadowRoot) return;
+    const container = erpShadowRoot.getElementById('erp-ai-plan-container');
+    if (!container) return;
+
+    if (!steps || steps.length === 0) {
+        container.style.display = 'none';
+        return;
+    }
+
+    container.style.display = 'flex';
+    container.innerHTML = `
+        <div style="font-weight: 700; font-size: 11px; text-transform: uppercase; color: #888; margin-bottom: 5px;">Current Plan</div>
+        ${steps.map((step, i) => `
+            <div class="plan-item ${i === 0 ? 'active' : ''}">
+                <div style="width: 6px; height: 6px; border-radius: 50%; background: ${i === 0 ? '#fff' : '#555'}"></div>
+                ${step}
+            </div>
+        `).join('')}
+    `;
+}
+
 function updateTranscriptHUD(source, transcript) {
     if (!erpShadowRoot) return;
     const el = erpShadowRoot.getElementById('erp-ai-transcript');
@@ -312,6 +363,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             const confirmBtn = erpShadowRoot?.getElementById('erp-ai-confirm-btn');
             if (confirmBtn) confirmBtn.style.display = 'none';
             updateHUD('idle');
+        } else if (message.command === 'update_plan') {
+            updatePlanHUD(message.steps);
         }
     } else if (message.type === 'transcription') {
         updateTranscriptHUD(message.source, message.text);
