@@ -106,32 +106,41 @@ let erpShadowRoot = null;
 function createHUD() {
     console.log("🛠️ createHUD() called");
     if (document.getElementById('erp-ai-hud-container')) return;
-    
+
     const container = document.createElement('div');
     container.id = 'erp-ai-hud-container';
     container.style.position = 'fixed';
     container.style.bottom = '30px';
     container.style.right = '30px';
     container.style.zIndex = '2147483647';
+    container.style.transition = 'bottom 0.1s ease, right 0.1s ease';
     document.body.appendChild(container);
-    
+
     erpShadowRoot = container.attachShadow({ mode: 'open' });
-    
+
     const hud = document.createElement('div');
     hud.id = 'erp-ai-hud';
+    
+    // Modern Glassmorphism Styling
     hud.style.padding = '12px 20px';
-    hud.style.backgroundColor = '#222';
+    hud.style.backgroundColor = 'rgba(25, 25, 25, 0.82)';
+    hud.style.backdropFilter = 'blur(16px)';
+    hud.style.webkitBackdropFilter = 'blur(16px)';
     hud.style.color = '#fff';
-    hud.style.borderRadius = '40px';
+    hud.style.borderRadius = '50px';
     hud.style.fontFamily = 'system-ui, -apple-system, sans-serif';
     hud.style.fontSize = '14px';
-    hud.style.boxShadow = '0 10px 40px rgba(0,0,0,0.6)';
+    hud.style.boxShadow = '0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.1)';
     hud.style.display = 'flex';
     hud.style.alignItems = 'center';
     hud.style.gap = '15px';
-    hud.style.border = '1px solid #444';
-    hud.style.transition = 'all 0.3s ease';
-    
+    hud.style.border = '1px solid rgba(255,255,255,0.1)';
+    hud.style.transition = 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)';
+    hud.style.cursor = 'grab';
+    hud.style.userSelect = 'none';
+    hud.style.maxWidth = '600px';
+    hud.style.overflow = 'hidden';
+
     hud.innerHTML = `
         <style>
           @keyframes erp-pulse-green {
@@ -149,24 +158,30 @@ function createHUD() {
             70% { transform: scale(1.1); box-shadow: 0 0 0 10px rgba(255, 193, 7, 0); }
             100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(255, 193, 7, 0); }
           }
-          #erp-ai-stop-btn:hover { background: rgba(255, 0, 0, 0.3); border-color: #ff5555; transform: translateY(-2px); }
-          #erp-ai-stop-btn:active { transform: scale(0.9); }
+          
+          .btn-hover:hover { transform: translateY(-2px); filter: brightness(1.2); }
+          .btn-hover:active { transform: scale(0.95); }
+          
           #erp-ai-minimize-btn {
             background: transparent;
             border: none;
-            color: #888;
+            color: #aaa;
             cursor: pointer;
             padding: 5px;
             display: flex;
             align-items: center;
             justify-content: center;
-            transition: color 0.2s;
+            transition: color 0.2s, transform 0.2s;
           }
-          #erp-ai-minimize-btn:hover { color: #fff; }
+          #erp-ai-minimize-btn:hover { color: #fff; transform: scale(1.1); }
+          
           #erp-ai-hud.mini {
-            padding: 8px 12px;
-            width: fit-content;
-            gap: 8px;
+            padding: 10px;
+            width: 32px;
+            height: 32px;
+            justify-content: center;
+            gap: 0;
+            border-radius: 50%;
           }
           #erp-ai-hud.mini #erp-ai-status-text,
           #erp-ai-hud.mini #erp-ai-transcript,
@@ -175,10 +190,12 @@ function createHUD() {
           #erp-ai-hud.mini #erp-ai-stop-btn,
           #erp-ai-hud.mini #erp-ai-confirm-btn {
             display: none !important;
+            opacity: 0;
           }
           #erp-ai-hud.mini #erp-ai-plan-container {
             display: none !important;
           }
+          
           #erp-ai-start-btn {
             background: #2563eb;
             color: white;
@@ -189,11 +206,10 @@ function createHUD() {
             cursor: pointer;
             display: none;
             transition: all 0.2s;
-            box-shadow: 0 4px 10px rgba(37, 99, 235, 0.3);
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4);
           }
-          #erp-ai-start-btn:hover { background: #1d4ed8; transform: translateY(-1px); }
           #erp-ai-confirm-btn {
-            background: #4CAF50;
+            background: #10b981;
             color: white;
             border: none;
             padding: 6px 14px;
@@ -202,97 +218,139 @@ function createHUD() {
             cursor: pointer;
             display: none;
             transition: all 0.2s;
-            box-shadow: 0 4px 10px rgba(76, 175, 80, 0.3);
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
           }
-          #erp-ai-confirm-btn:hover { background: #45a049; transform: translateY(-1px); }
-          .status-indicator { width: 12px; height: 12px; border-radius: 50%; }
-          
+          .status-indicator { width: 12px; height: 12px; border-radius: 50%; transition: background-color 0.3s; }
+
           #erp-ai-plan-container {
             position: absolute;
             bottom: 100%;
             right: 0;
             margin-bottom: 15px;
-            background: rgba(34, 34, 34, 0.95);
-            border: 1px solid #444;
-            border-radius: 12px;
-            padding: 15px;
-            width: 250px;
+            background: rgba(30, 30, 30, 0.85);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 16px;
+            padding: 18px;
+            width: 260px;
             display: none;
             flex-direction: column;
-            gap: 8px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-            backdrop-filter: blur(10px);
+            gap: 10px;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+            animation: erp-slide-up 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+          }
+          @keyframes erp-slide-up {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
           }
           .plan-item {
-            font-size: 12px;
-            color: #ccc;
+            font-size: 12.5px;
+            color: #bbb;
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 10px;
+            transition: all 0.2s;
           }
-          .plan-item.done { color: #4CAF50; text-decoration: line-through; }
-          .plan-item.active { color: #fff; font-weight: 600; }
+          .plan-item.done { color: #10b981; text-decoration: line-through; opacity: 0.6; }
+          .plan-item.active { color: #fff; font-weight: 600; transform: translateX(5px); }
         </style>
-        
+
         <div id="erp-ai-plan-container"></div>
 
         <button id="erp-ai-minimize-btn" title="Minimize/Expand">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
                 <path d="M19 13H5v-2h14v2z"/>
             </svg>
         </button>
 
         <div id="erp-ai-indicator" class="status-indicator" style="background-color: #94a3b8;"></div>
-        <span id="erp-ai-status-text" style="font-weight: 600; min-width: 90px; color: #eee;">Autopilot</span>
-        
+        <span id="erp-ai-status-text" style="font-weight: 600; min-width: 90px; color: #fff; letter-spacing: -0.2px;">Autopilot</span>
+
         <div style="display: flex; gap: 10px; align-items: center;">
-            <button id="erp-ai-start-btn">Start</button>
-            <button id="erp-ai-confirm-btn">Confirm Action</button>
-            <button id="erp-ai-stop-btn" title="Exit Autopilot" style="
-                background: rgba(255, 0, 0, 0.1);
-                border: 1px solid rgba(255, 0, 0, 0.3);
-                color: #ff5555;
+            <button id="erp-ai-start-btn" class="btn-hover">Start</button>
+            <button id="erp-ai-confirm-btn" class="btn-hover">Confirm Action</button>
+            <button id="erp-ai-stop-btn" class="btn-hover" title="Exit Autopilot" style="
+                background: rgba(239, 68, 68, 0.15);
+                border: 1px solid rgba(239, 68, 68, 0.3);
+                color: #f87171;
                 padding: 0;
                 border-radius: 50%;
                 cursor: pointer;
-                width: 42px;
-                height: 42px;
+                width: 40px;
+                height: 40px;
                 display: flex;
                 align-items: center;
                 justify-content: center;
                 outline: none;
                 transition: all 0.2s;
             ">
-                <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
                     <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
                 </svg>
             </button>
         </div>
         <div id="erp-ai-transcript" style="
-            border-left: 1px solid #444;
+            border-left: 1px solid rgba(255,255,255,0.1);
             padding-left: 15px;
             font-size: 12px;
-            color: #aaa;
-            max-width: 200px;
+            color: rgba(255,255,255,0.6);
+            max-width: 180px;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
             font-weight: 400;
         ">Waiting for sound...</div>
         <div id="erp-ai-volume-container" style="
-            width: 40px;
-            height: 4px;
-            background: #333;
+            width: 35px;
+            height: 3px;
+            background: rgba(255,255,255,0.1);
             border-radius: 2px;
             overflow: hidden;
             display: none;
         ">
-            <div id="erp-ai-volume-meter" style="width: 0%; height: 100%; background: #4CAF50; transition: width 0.1s;"></div>
+            <div id="erp-ai-volume-meter" style="width: 0%; height: 100%; background: #10b981; transition: width 0.1s;"></div>
         </div>
     `;
-    
+
     erpShadowRoot.appendChild(hud);
-    
+
+    // ==============================================================================
+    // 🖱️ DRAG AND DROP LOGIC
+    // ==============================================================================
+    let isDragging = false;
+    let startX, startY, initialRight, initialBottom;
+
+    hud.addEventListener('mousedown', (e) => {
+        if (e.target.closest('button')) return; // Don't drag if clicking buttons
+        isDragging = true;
+        hud.style.cursor = 'grabbing';
+        startX = e.clientX;
+        startY = e.clientY;
+        
+        const rect = container.getBoundingClientRect();
+        initialRight = window.innerWidth - rect.right;
+        initialBottom = window.innerHeight - rect.bottom;
+        
+        container.style.transition = 'none'; // Disable transition while dragging
+    });
+
+    window.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        const deltaX = startX - e.clientX;
+        const deltaY = startY - e.clientY;
+        
+        container.style.right = `${initialRight + deltaX}px`;
+        container.style.bottom = `${initialBottom + deltaY}px`;
+    });
+
+    window.addEventListener('mouseup', () => {
+        if (isDragging) {
+            isDragging = false;
+            hud.style.cursor = 'grab';
+            container.style.transition = 'bottom 0.1s ease, right 0.1s ease';
+        }
+    });
+
     const startBtn = erpShadowRoot.getElementById('erp-ai-start-btn');
     const stopBtn = erpShadowRoot.getElementById('erp-ai-stop-btn');
     const confirmBtn = erpShadowRoot.getElementById('erp-ai-confirm-btn');
@@ -302,8 +360,8 @@ function createHUD() {
         hud.classList.toggle('mini');
         const isMini = hud.classList.contains('mini');
         minBtn.innerHTML = isMini ? 
-            '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M7 14H5v5h2v-5zm12-5h2V4h-2v5zM5 4v5h2V4H5zm14 15h2v-5h-2v5z"/></svg>' : 
-            '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M19 13H5v-2h14v2z"/></svg>';
+            '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M7 14H5v5h2v-5zm12-5h2V4h-2v5zM5 4v5h2V4H5zm14 15h2v-5h-2v5z"/></svg>' : 
+            '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M19 13H5v-2h14v2z"/></svg>';
     });
 
     startBtn.addEventListener('click', () => {
@@ -318,7 +376,7 @@ function createHUD() {
         safeSendMessage({ type: 'action', action: 'confirm' });
         confirmBtn.style.display = 'none';
     });
-    
+
     console.log("✅ HUD created successfully in Shadow DOM");
     updateHUD('offline'); // Initial state
 }
