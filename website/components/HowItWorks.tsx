@@ -67,10 +67,6 @@ export default function HowItWorks() {
 
         {/* Steps */}
         <div className="relative grid gap-8 lg:grid-cols-3">
-          {/* Connecting line (desktop) */}
-          <div className="pointer-events-none absolute left-[calc(33%-1px)] top-12 hidden h-px w-[calc(33%+2px)] bg-gradient-to-r from-blue-500/40 via-violet-500/40 to-transparent lg:block" />
-          <div className="pointer-events-none absolute left-[calc(66%-1px)] top-12 hidden h-px w-[calc(33%+2px)] bg-gradient-to-r from-violet-500/40 to-transparent lg:block" />
-
           {steps.map((step) => (
             <div
               key={step.number}
