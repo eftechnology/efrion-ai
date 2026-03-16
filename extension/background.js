@@ -2,6 +2,7 @@ let ws = null;
 let isIntentionalDisconnect = false;
 let reconnectInterval = null;
 let lastDataUrl = null;
+let currentPlan = null; // Track the AI's plan across reloads
 
 // Helper to safely send messages to the active tab's content script
 function sendMessageToActiveTab(payload) {
@@ -16,28 +17,41 @@ function sendMessageToActiveTab(payload) {
     });
 }
 
+// Track navigations to notify the AI
+chrome.webNavigation?.onCommitted.addListener((details) => {
+    if (details.frameId === 0 && ws && ws.readyState === WebSocket.OPEN) {
+        console.log(`🌐 Navigation detected to: ${details.url}`);
+        ws.send(JSON.stringify({ 
+            type: 'image', 
+            data: null,
+            pageState: { url: details.url, title: "Navigating...", readyState: "loading", domUpdate: null } 
+        }));
+    }
+});
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === 'start_session') {
         isIntentionalDisconnect = false;
         lastDataUrl = null;
+        currentPlan = null;
         connectWebSocket();
         sendResponse({status: 'connecting'});
-        return false; // Sync response
+        return false; 
     } else if (message.action === 'stop_session') {
         isIntentionalDisconnect = true;
+        currentPlan = null;
         if (reconnectInterval) {
             clearTimeout(reconnectInterval);
             reconnectInterval = null;
         }
         if (ws) ws.close();
         sendResponse({status: 'disconnected'});
-        return false; // Sync response
+        return false; 
     } else if (message.action === 'send_audio') {
         if (ws && ws.readyState === WebSocket.OPEN) {
-            console.log('📤 Sending audio to backend');
             ws.send(JSON.stringify({ type: 'audio', data: message.data }));
         }
-        return false; // No response needed
+        return false; 
     } else if (message.action === 'capture_screen') {
         if (message.skipImage) {
             if (ws && ws.readyState === WebSocket.OPEN) {
@@ -54,30 +68,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             const tab = tabs[0];
             if (!tab || !tab.url) return;
 
-            // Skip privileged URLs
-            if (tab.url.startsWith('chrome://') || 
-                tab.url.startsWith('devtools://') || 
-                tab.url.startsWith('edge://') ||
-                tab.url.startsWith('view-source:')) {
-                console.log('🚫 Skipping screen capture for privileged URL:', tab.url);
-                return;
-            }
+            if (tab.url.startsWith('chrome://') || tab.url.startsWith('devtools://') || tab.url.startsWith('view-source:')) return;
 
             try {
                 chrome.tabs.captureVisibleTab(null, { format: 'jpeg', quality: 50 }, (dataUrl) => {
-                    if (chrome.runtime.lastError) {
-                        const errMsg = chrome.runtime.lastError.message;
-                        if (!errMsg.includes("cannot be edited") && !errMsg.includes("not in effect")) {
-                            console.error("Screen capture error:", errMsg);
-                        }
-                        return;
-                    }
+                    if (chrome.runtime.lastError) return;
 
                     const imageChanged = dataUrl !== lastDataUrl;
-                    const domChanged = message.pageState.domChanged;
+                    const domChanged = !!message.pageState.domUpdate;
                     
                     if (ws && ws.readyState === WebSocket.OPEN && (imageChanged || domChanged)) {
-                        console.log('📤 Sending image/DOM to backend');
                         ws.send(JSON.stringify({ 
                             type: 'image', 
                             data: imageChanged ? dataUrl : null,
@@ -86,29 +86,30 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         lastDataUrl = dataUrl;
                     }
                 });
-            } catch (e) {
-                console.error("Capture capture crash:", e);
-            }
+            } catch (e) {}
         });
         return false; 
-    } else if (message.action === 'action_completed') {
+    } else if (message.type === 'status') {
         if (ws && ws.readyState === WebSocket.OPEN) {
-            console.log('📤 Sending status to backend');
-            ws.send(JSON.stringify({ 
-                type: 'status', 
-                message: "Action completed, waiting for network idle...",
-                detail: message.detail
-            }));
+            ws.send(JSON.stringify(message));
+        }
+        return false;
+    } else if (message.type === 'action' && message.action === 'confirm') {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify(message));
         }
         return false;
     } else if (message.action === 'query_status') {
         const isConnected = ws && ws.readyState === WebSocket.OPEN;
-        sendResponse({ status: isConnected ? 'connected' : 'disconnected' });
+        sendResponse({ status: isConnected ? 'connected' : 'disconnected', plan: currentPlan });
         if (isConnected) {
-            // Echo back to ensure the tab initializes
             sendMessageToActiveTab({action: 'ws_connected'});
+            // Restore plan if it exists
+            if (currentPlan) {
+                sendMessageToActiveTab({ type: 'command', command: 'update_plan', steps: currentPlan });
+            }
         }
-        return true; // Keep channel open for async response
+        return true; 
     }
 });
 
@@ -118,7 +119,7 @@ function connectWebSocket() {
     ws = new WebSocket('ws://localhost:8000/ws');
     
     ws.onopen = () => {
-        console.log('✅ WebSocket connected to Python backend at ws://localhost:8000/ws');
+        console.log('✅ WebSocket connected');
         if (reconnectInterval) {
             clearTimeout(reconnectInterval);
             reconnectInterval = null;
@@ -128,18 +129,22 @@ function connectWebSocket() {
 
     ws.onmessage = async (event) => {
         const msg = JSON.parse(event.data);
-        // Forward all relevant communication types to the UI
+        
+        // INTERCEPT PLAN UPDATES to store in background
+        if (msg.type === 'command' && msg.command === 'update_plan') {
+            currentPlan = msg.steps;
+        }
+
         if (msg.type === 'command' || msg.type === 'audio' || msg.type === 'transcription' || msg.type === 'error') {
             sendMessageToActiveTab(msg);
         }
     };
 
     ws.onclose = (event) => {
-        console.log(`WebSocket disconnected. Code: ${event.code}, Reason: ${event.reason}`);
+        console.log(`WebSocket disconnected.`);
         sendMessageToActiveTab({action: 'stop'});
         
         if (!isIntentionalDisconnect) {
-            console.log('Attempting to reconnect in 3 seconds...');
             reconnectInterval = setTimeout(connectWebSocket, 3000);
         }
     };

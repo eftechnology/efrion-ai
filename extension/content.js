@@ -735,6 +735,11 @@ console.log("🔍 Checking session status on load...");
 chrome.runtime.sendMessage({ action: 'query_status' }, (response) => {
     if (response && response.status === 'connected') {
         console.log("♻️ Resuming active session...");
+        createHUD();
+        updateHUD('idle');
+        if (response.plan) {
+            updatePlanHUD(response.plan);
+        }
     }
 });
 
