@@ -470,12 +470,51 @@ function generateStableId(el) {
     return `el-${Math.abs(hash).toString(16)}`;
 }
 
+function findLabelForElement(el) {
+    // 1. Standard labels property
+    if (el.labels && el.labels.length > 0) {
+        return el.labels[0].innerText;
+    }
+
+    // 2. ARIA attributes
+    const ariaLabel = el.getAttribute('aria-label');
+    if (ariaLabel) return ariaLabel;
+
+    const labelledBy = el.getAttribute('aria-labelledby');
+    if (labelledBy) {
+        const labelEl = document.getElementById(labelledBy);
+        if (labelEl) return labelEl.innerText;
+    }
+
+    // 3. Common attributes
+    if (el.placeholder) return el.placeholder;
+    if (el.title) return el.title;
+
+    // 4. Linked <label> via 'for' attribute (fallback if el.labels is empty)
+    if (el.id) {
+        const label = document.querySelector(`label[for="${el.id}"]`);
+        if (label) return label.innerText;
+    }
+
+    // 5. Parent <label>
+    const parentLabel = el.closest('label');
+    if (parentLabel) return parentLabel.innerText;
+
+    // 6. Proximity Analysis: Look for a preceding text node or label-like sibling
+    let prev = el.previousElementSibling;
+    if (prev && (prev.tagName === 'LABEL' || prev.tagName.match(/^H[1-6]$/))) {
+        return prev.innerText;
+    }
+
+    // 7. Last resort: use the element's own text if it's a button/link
+    return (el.innerText || "").trim();
+}
+
 function getSimplifiedAccessibilityTree() {
     const interactiveElements = [];
     const selector = 'button, a, input, select, textarea, [role="button"], [tabindex]:not([tabindex="-1"])';
     const elements = document.querySelectorAll(selector);
 
-    // Track ID collisions to ensure uniqueness in a single turn
     const idCounts = {};
 
     elements.forEach((el) => {
@@ -489,10 +528,12 @@ function getSimplifiedAccessibilityTree() {
             idCounts[baseId] = (idCounts[baseId] || 0) + 1;
             const finalId = idCounts[baseId] > 1 ? `${baseId}-${idCounts[baseId]}` : baseId;
 
+            const label = findLabelForElement(el).trim();
+
             let elementData = {
                 id: finalId,
                 tagName: el.tagName.toLowerCase(),
-                label: (el.innerText || el.getAttribute('aria-label') || el.placeholder || el.title || "").trim(),
+                label: label || "Unnamed Element",
                 role: el.getAttribute('role') || el.type || "",
                 x: Math.round(rect.left + rect.width / 2),
                 y: Math.round(rect.top + rect.height / 2)
@@ -503,8 +544,6 @@ function getSimplifiedAccessibilityTree() {
                 elementData.options = Array.from(el.options)
                     .filter(opt => opt.value !== "")
                     .map(opt => ({ value: opt.value, text: opt.text }));
-                // Limit label for selects to just the current value or label
-                elementData.label = (el.labels && el.labels.length > 0 ? el.labels[0].innerText : (el.placeholder || el.title || "Select Field")).trim();
             }
 
             interactiveElements.push(elementData);
@@ -512,8 +551,7 @@ function getSimplifiedAccessibilityTree() {
         }
     });
     return interactiveElements;
-}
-// ==============================================================================
+}// ==============================================================================
 // AUDIO RECORDING: 16kHz PCM via AudioWorklet
 // ==============================================================================
 
