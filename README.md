@@ -142,6 +142,72 @@ Open `efrion_erp.html` directly in Chrome — it's a self-contained ERP demo pag
 
 ---
 
+## Reproducible Testing
+
+This section allows judges and reviewers to fully verify the project end-to-end in under 5 minutes.
+
+### Step 1 — Get a Gemini API Key
+
+Go to [https://aistudio.google.com/apikey](https://aistudio.google.com/apikey) and create a free API key. No billing required.
+
+### Step 2 — Start the Backend
+
+```bash
+git clone https://github.com/eftechnology/efrion-ai.git
+cd efrion-ai/backend
+
+cp .env.example .env
+# Open .env and set: GEMINI_API_KEY=your_key_here
+
+uv sync
+uv run uvicorn main:app
+# Backend running at http://localhost:8000
+```
+
+### Step 3 — Load the Chrome Extension
+
+1. Open `chrome://extensions` in Chrome
+2. Enable **Developer mode** (toggle, top right)
+3. Click **Load unpacked** → select the `extension/` folder from the repo
+4. The EFRION icon appears in your Chrome toolbar
+
+### Step 4 — Open the Test ERP
+
+Open `efrion_erp.html` directly in Chrome (File → Open, or drag into browser window). This is a fully self-contained ERP demo — no server needed.
+
+### Step 5 — Run a Test Scenario
+
+1. Click the **EFRION extension icon** in the toolbar — the HUD injects into the page
+2. Click **Start** in the HUD
+3. Hold **Alt** and speak one of the commands below, then release
+
+| Test command | Expected result |
+|---|---|
+| *"Go to the Employees tab"* | AI clicks the Employees nav tab |
+| *"Add a new employee named John Smith in the Engineering department"* | AI clicks Add Employee, fills in name and department, submits |
+| *"Create an invoice for AWS for $1500 due next week"* | AI navigates to Invoices, fills the form fields, sets the date |
+| *"Show me the sales report"* | AI navigates to the Reports tab and opens the sales report |
+| *"Undo that"* | AI reverts the last action |
+
+### What to Look For
+
+- The **HUD equalizer** animates while the AI is speaking or listening
+- The **plan window** appears above the HUD showing numbered steps as the AI works
+- A **ghost cursor** highlights elements before clicking (in safety lock mode)
+- Each step in the plan shows a **✓** as it completes
+- A **toast notification** confirms the final outcome
+
+### Troubleshooting
+
+| Issue | Fix |
+|---|---|
+| HUD doesn't appear | Make sure the extension is loaded and the backend is running at `http://localhost:8000` |
+| No AI response | Check `GEMINI_API_KEY` in `backend/.env` and restart the backend |
+| No audio output | Allow microphone access in Chrome when prompted |
+| WebSocket error in console | Reload the page — the extension auto-reconnects |
+
+---
+
 ## Usage
 
 1. Start the backend (`uv run uvicorn main:app`)
