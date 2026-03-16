@@ -1,15 +1,25 @@
 let screenCaptureIntervalId = null; 
-let screenCaptureInterval = 5000;
+let screenCaptureInterval = 2000;
 let domDirty = true;
 let cachedAccessibilityTree = [];
 let mutationObserver = null;
+let mutationDebounceTimer = null;
 let isPushToTalkActive = false;
-let isPlaying = false; 
+let isPlaying = false;
 let lastSpeechEndTime = 0;
-const POST_SPEECH_COOLDOWN_MS = 5000;
+const POST_SPEECH_COOLDOWN_MS = 800; // Lowered from 5000 to improve responsiveness
 let isCoolingDown = false;
 let lastTreeJson = ''; // Used to track DOM changes
 
+function scheduleDebouncedCapture() {
+    if (mutationDebounceTimer) clearTimeout(mutationDebounceTimer);
+    mutationDebounceTimer = setTimeout(() => {
+        if (domDirty) {
+            console.log("⚡ DOM mutation detected - Triggering immediate sync...");
+            captureAndSend(true); // Sync DOM state immediately (skip image for speed)
+        }
+    }, 300); // 300ms debounce
+}
 // ==============================================================================
 // SAFE MESSAGING & CLEANUP
 // ==============================================================================
@@ -359,8 +369,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (vol) vol.style.display = 'block';
         
         startRecording();
+        
+        // Immediate sync on connect
+        setTimeout(() => captureAndSend(), 500);
+
         if (!mutationObserver) {
-            mutationObserver = new MutationObserver(() => domDirty = true);
+            mutationObserver = new MutationObserver(() => {
+                domDirty = true;
+                scheduleDebouncedCapture();
+            });
             mutationObserver.observe(document.body, { 
                 childList: true, subtree: true, attributes: true, 
                 attributeFilter: ['class', 'style', 'hidden', 'disabled'] 
@@ -374,13 +391,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             // 2. Post-speech cooldown check
             const now = Date.now();
             if (now - lastSpeechEndTime < POST_SPEECH_COOLDOWN_MS) {
-                const remaining = Math.ceil((POST_SPEECH_COOLDOWN_MS - (now - lastSpeechEndTime)) / 1000);
-                console.log(`⏳ Post-speech cooldown active (${remaining}s remaining)...`);
                 return;
             }
 
             captureAndSend();
-        }, screenCaptureInterval);
+        }, 1500); // More frequent updates (1.5s)
     } else if (message.type === 'command') {
         if (message.command === 'stop_audio') {
             audioQueue = []; nextStartTime = 0;
@@ -636,7 +651,13 @@ function simulateClickWithGhostCursor(id) {
     setTimeout(() => {
         cursor.style.transform = 'scale(2)'; cursor.style.opacity = '0';
         el.click();
-        setTimeout(() => { cursor.remove(); updateHUD('idle'); safeSendMessage({ type: 'status', action: 'click_element', message: 'success', detail: `Clicked ${id}` }); }, 300);
+        setTimeout(() => { 
+            cursor.remove(); 
+            updateHUD('idle'); 
+            safeSendMessage({ type: 'status', action: 'click_element', message: 'success', detail: `Clicked ${id}` }); 
+            // Immediate sync after click to catch navigation/DOM changes
+            setTimeout(() => captureAndSend(true), 100);
+        }, 300);
     }, 500);
 }
 
@@ -675,6 +696,8 @@ function typeTextIntoElement(id, text) {
             message: 'success', 
             detail: `Interacted with ${id}` 
         }); 
+        // Immediate sync after typing
+        setTimeout(() => captureAndSend(true), 100);
     }, 300);
 }
 
