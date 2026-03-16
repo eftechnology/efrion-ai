@@ -309,8 +309,23 @@ function getTreeDiff(currentTree) {
             added.push(el);
         } else {
             const prev = lastAccessibilityTree.get(id);
-            if (prev.label !== el.label || prev.role !== el.role) {
-                updated.push({ id, oldLabel: prev.label, newLabel: el.label });
+            const labelChanged = prev.label !== el.label;
+            const roleChanged = prev.role !== el.role;
+            // Detect movement if element shifted by more than 5 pixels
+            const moved = Math.abs(prev.x - el.x) > 5 || Math.abs(prev.y - el.y) > 5;
+            // Detect if select options changed
+            const optionsChanged = JSON.stringify(prev.options) !== JSON.stringify(el.options);
+
+            if (labelChanged || roleChanged || moved || optionsChanged) {
+                updated.push({ 
+                    id, 
+                    changes: {
+                        label: labelChanged ? el.label : undefined,
+                        role: roleChanged ? el.role : undefined,
+                        moved: moved ? { x: el.x, y: el.y } : undefined,
+                        options: optionsChanged ? el.options : undefined
+                    }
+                });
             }
         }
     }
