@@ -285,33 +285,68 @@ function updateTranscriptHUD(source, transcript) {
     }, 5000);
 }
 
-function captureAndSend(domOnly = false) {
-    if (isCoolingDown || isPlaying) return; // Completely silent during speech or cooldown
+let lastAccessibilityTree = new Map(); // ID -> Element map for diffing
 
-    let treeToSend = null;
+function getTreeDiff(currentTree) {
+    const currentMap = new Map(currentTree.map(el => [el.id, el]));
+    const added = [];
+    const removed = [];
+    const updated = [];
+
+    // Find Added and Updated
+    for (const [id, el] of currentMap) {
+        if (!lastAccessibilityTree.has(id)) {
+            added.push(el);
+        } else {
+            const prev = lastAccessibilityTree.get(id);
+            if (prev.label !== el.label || prev.role !== el.role) {
+                updated.push({ id, oldLabel: prev.label, newLabel: el.label });
+            }
+        }
+    }
+
+    // Find Removed
+    for (const id of lastAccessibilityTree.keys()) {
+        if (!currentMap.has(id)) {
+            removed.push(id);
+        }
+    }
+
+    lastAccessibilityTree = currentMap;
+    return { added, removed, updated, totalCount: currentTree.length };
+}
+
+function captureAndSend(domOnly = false) {
+    if (isCoolingDown || isPlaying) return; 
+
+    let domPayload = null;
     if (domDirty) {
-        const tree = getSimplifiedAccessibilityTree();
-        const treeJson = JSON.stringify(tree);
+        const currentTree = getSimplifiedAccessibilityTree();
+        const diff = getTreeDiff(currentTree);
         
-        // Only send if the tree has actually changed
-        if (treeJson !== lastTreeJson) {
-            treeToSend = tree;
-            lastTreeJson = treeJson;
+        const hasChanges = diff.added.length > 0 || diff.removed.length > 0 || diff.updated.length > 0;
+        
+        if (hasChanges) {
+            // HEURISTIC: If more than 30% of elements changed, send the full tree.
+            // Otherwise, send a semantic diff to save tokens.
+            const changeCount = diff.added.length + diff.removed.length + diff.updated.length;
+            if (changeCount > diff.totalCount * 0.3 || lastAccessibilityTree.size === 0) {
+                domPayload = { type: 'full', tree: currentTree };
+            } else {
+                domPayload = { type: 'diff', diff: { added: diff.added, removed: diff.removed, updated: diff.updated } };
+            }
         }
         domDirty = false;
     }
 
-    // Only skip image capture if explicitly told or if just sent recently (logic can be expanded)
     const pageState = {
         url: window.location.href,
         title: document.title,
         readyState: document.readyState,
-        accessibilityTree: treeToSend,
-        domChanged: treeToSend !== null
+        domUpdate: domPayload
     };
 
-    // If nothing changed and we aren't sending an image, don't send anything
-    if (!treeToSend && domOnly) return;
+    if (!domPayload && domOnly) return;
 
     safeSendMessage({ action: 'capture_screen', skipImage: domOnly, pageState: pageState });
 }
@@ -424,14 +459,25 @@ function getSimplifiedAccessibilityTree() {
             idCounts[baseId] = (idCounts[baseId] || 0) + 1;
             const finalId = idCounts[baseId] > 1 ? `${baseId}-${idCounts[baseId]}` : baseId;
 
-            interactiveElements.push({
+            let elementData = {
                 id: finalId,
                 tagName: el.tagName.toLowerCase(),
                 label: (el.innerText || el.getAttribute('aria-label') || el.placeholder || el.title || "").trim(),
                 role: el.getAttribute('role') || el.type || "",
                 x: Math.round(rect.left + rect.width / 2),
                 y: Math.round(rect.top + rect.height / 2)
-            });
+            };
+
+            // Add options for select elements
+            if (el.tagName.toLowerCase() === 'select') {
+                elementData.options = Array.from(el.options)
+                    .filter(opt => opt.value !== "")
+                    .map(opt => ({ value: opt.value, text: opt.text }));
+                // Limit label for selects to just the current value or label
+                elementData.label = (el.labels && el.labels.length > 0 ? el.labels[0].innerText : (el.placeholder || el.title || "Select Field")).trim();
+            }
+
+            interactiveElements.push(elementData);
             el.setAttribute('data-gemini-id', finalId);
         }
     });
@@ -597,10 +643,39 @@ function simulateClickWithGhostCursor(id) {
 function typeTextIntoElement(id, text) {
     const el = document.querySelector(`[data-gemini-id="${id}"]`);
     if (!el) { updateHUD('idle'); return; }
-    el.focus(); el.value = text;
+    
+    el.focus();
+    
+    if (el.tagName.toLowerCase() === 'select') {
+        // Special handling for <select> elements
+        let optionToSelect = Array.from(el.options).find(opt => 
+            opt.value.toLowerCase() === text.toLowerCase() || 
+            opt.text.toLowerCase().includes(text.toLowerCase())
+        );
+        
+        if (optionToSelect) {
+            el.value = optionToSelect.value;
+            console.log(`✅ Selected option: ${optionToSelect.text}`);
+        } else {
+            console.warn(`⚠️ Could not find option matching: ${text}`);
+        }
+    } else {
+        // Standard handling for input/textarea
+        el.value = text;
+    }
+    
     el.dispatchEvent(new Event('input', { bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
-    setTimeout(() => { updateHUD('idle'); safeSendMessage({ type: 'status', action: 'type_text', message: 'success', detail: `Typed into ${id}` }); }, 300);
+    
+    setTimeout(() => { 
+        updateHUD('idle'); 
+        safeSendMessage({ 
+            type: 'status', 
+            action: 'type_text', 
+            message: 'success', 
+            detail: `Interacted with ${id}` 
+        }); 
+    }, 300);
 }
 
 function scrollPage(direction) {
