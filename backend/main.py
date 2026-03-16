@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import asyncio
 import base64
@@ -186,9 +187,10 @@ async def websocket_endpoint(websocket: WebSocket):
         print(f"🔗 Connecting to Gemini Live API with model: gemini-2.5-flash-native-audio-preview-12-2025")
         async with client.aio.live.connect(model="gemini-2.5-flash-native-audio-preview-12-2025", config=config) as gemini_session:
             pending_tool_calls = {}
-            locked_commands = {} 
-            confirmed_ids = set() 
+            locked_commands = {}
+            confirmed_ids = set()
             stats = {"audio_chunks_sent": 0}
+            plan_state = {"steps": [], "active_index": 0, "output_buffer": ""}
             
             # Synchronization event: only send input when no tool calls are pending
             ready_for_input = asyncio.Event()
@@ -302,6 +304,15 @@ async def websocket_endpoint(websocket: WebSocket):
                                     if not pending_tool_calls:
                                         print("🟢 All tool calls resolved. Resuming input dispatchers.")
                                         ready_for_input.set()
+                                        # Advance plan step
+                                        if plan_state["steps"]:
+                                            plan_state["active_index"] = min(plan_state["active_index"] + 1, len(plan_state["steps"]))
+                                            await websocket.send_json({
+                                                "type": "command",
+                                                "command": "update_plan",
+                                                "steps": plan_state["steps"],
+                                                "activeIndex": plan_state["active_index"]
+                                            })
 
                     except WebSocketDisconnect:
                         print("🔴 Extension disconnected.")
@@ -343,18 +354,31 @@ async def websocket_endpoint(websocket: WebSocket):
 
                                 if server_content.output_transcription and server_content.output_transcription.text:
                                     text = server_content.output_transcription.text
+                                    plan_state["output_buffer"] += text
                                     await websocket.send_json({"type": "transcription", "source": "MODEL", "text": text})
-                                    
-                                    # PLAN DETECTION: Extract and forward plan to HUD
-                                    if "PLAN:" in text:
-                                        plan_content = text.split("PLAN:")[1].strip()
-                                        # Clean up steps (handle both comma and dot numbering)
-                                        steps = [s.strip() for s in plan_content.replace(".", ",").split(",") if s.strip()]
-                                        await websocket.send_json({
-                                            "type": "command",
-                                            "command": "update_plan",
-                                            "steps": steps
-                                        })
+
+                                if getattr(server_content, 'turn_complete', False):
+                                    buf = plan_state["output_buffer"]
+                                    plan_state["output_buffer"] = ""
+                                    if "PLAN:" in buf.upper():
+                                        plan_start = buf.upper().find("PLAN:")
+                                        plan_raw = buf[plan_start + 5:].strip()
+                                        # Try numbered list first: "1. Step" or "1) Step"
+                                        numbered = re.split(r'\d+[.)]\s+', plan_raw)
+                                        numbered = [s.strip().rstrip('.,;').strip() for s in numbered if s.strip() and len(s.strip()) > 2]
+                                        if len(numbered) > 1:
+                                            steps = numbered
+                                        else:
+                                            steps = [s.strip().rstrip('.').strip() for s in plan_raw.split(',') if s.strip() and len(s.strip()) > 2]
+                                        if steps:
+                                            plan_state["steps"] = steps
+                                            plan_state["active_index"] = 0
+                                            await websocket.send_json({
+                                                "type": "command",
+                                                "command": "update_plan",
+                                                "steps": steps,
+                                                "activeIndex": 0
+                                            })
                                     
                                 if server_content.model_turn:
                                     for part in server_content.model_turn.parts:

@@ -698,17 +698,24 @@ function updatePlanHUD(steps, activeIndex = 0) {
     }
 
     const total = steps.length;
+    const allDone = activeIndex >= total;
     const current = Math.min(activeIndex + 1, total);
 
+    if (container._dismissTimeout) clearTimeout(container._dismissTimeout);
+
     container.style.display = 'flex';
+    container.style.opacity = '1';
     container.innerHTML = `
         <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
             <div style="font-weight:700; font-size:11px; text-transform:uppercase; color:#888;">Current Plan</div>
-            <div style="font-size:11px; font-weight:700; color:#10b981; background:rgba(16,185,129,0.15); border:1px solid rgba(16,185,129,0.3); border-radius:10px; padding:2px 8px;">${current} / ${total}</div>
+            ${allDone
+                ? `<div style="font-size:11px; font-weight:700; color:#10b981; background:rgba(16,185,129,0.2); border:1px solid rgba(16,185,129,0.4); border-radius:10px; padding:2px 8px;">✓ Done</div>`
+                : `<div style="font-size:11px; font-weight:700; color:#10b981; background:rgba(16,185,129,0.15); border:1px solid rgba(16,185,129,0.3); border-radius:10px; padding:2px 8px;">${current} / ${total}</div>`
+            }
         </div>
         ${steps.map((step, i) => {
-            const isDone = i < activeIndex;
-            const isActive = i === activeIndex;
+            const isDone = allDone || i < activeIndex;
+            const isActive = !allDone && i === activeIndex;
             const label = isDone ? '✓' : (i + 1);
             const cls = isDone ? 'done' : (isActive ? 'active' : '');
             return `<div class="plan-item ${cls}">
@@ -717,6 +724,18 @@ function updatePlanHUD(steps, activeIndex = 0) {
             </div>`;
         }).join('')}
     `;
+
+    if (allDone) {
+        container._dismissTimeout = setTimeout(() => {
+            container.style.transition = 'opacity 0.5s ease';
+            container.style.opacity = '0';
+            setTimeout(() => {
+                container.style.display = 'none';
+                container.style.opacity = '1';
+                container.style.transition = '';
+            }, 500);
+        }, 3000);
+    }
 }
 
 function renderChatPanel() {
