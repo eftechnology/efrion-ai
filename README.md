@@ -1,5 +1,11 @@
 # EFRION AI Autopilot
 
+[![Deploy](https://github.com/eftechnology/efrion-ai/actions/workflows/deploy.yml/badge.svg)](https://github.com/eftechnology/efrion-ai/actions/workflows/deploy.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
+[![Chrome Extension](https://img.shields.io/badge/Chrome-Extension-blue?logo=googlechrome&logoColor=white)](extension/)
+[![Gemini 2.5](https://img.shields.io/badge/Gemini-2.5%20Flash-4285F4?logo=google&logoColor=white)](https://aistudio.google.com/)
+
 > **Just speak. It works.**
 
 A Chrome extension that turns voice commands into autonomous ERP actions — powered by the Gemini Live API. Click, type, navigate, and fill forms hands-free on any web-based ERP system.
