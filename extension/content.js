@@ -100,12 +100,26 @@ function createHUD() {
           }
           #erp-ai-stop-btn:hover { background: rgba(255, 0, 0, 0.3); border-color: #ff5555; transform: translateY(-2px); }
           #erp-ai-stop-btn:active { transform: scale(0.9); }
+          #erp-ai-confirm-btn {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-weight: 600;
+            cursor: pointer;
+            display: none;
+            transition: all 0.2s;
+            box-shadow: 0 4px 10px rgba(76, 175, 80, 0.3);
+          }
+          #erp-ai-confirm-btn:hover { background: #45a049; transform: translateY(-1px); }
           .status-indicator { width: 12px; height: 12px; border-radius: 50%; }
         </style>
         <div id="erp-ai-indicator" class="status-indicator" style="background-color: #4CAF50; animation: erp-pulse-green 1.5s infinite;"></div>
         <span id="erp-ai-status-text" style="font-weight: 600; min-width: 90px; color: #eee;">AI Online</span>
         
         <div style="display: flex; gap: 10px; align-items: center;">
+            <button id="erp-ai-confirm-btn">Confirm Action</button>
             <button id="erp-ai-stop-btn" title="Exit Autopilot" style="
                 background: rgba(255, 0, 0, 0.1);
                 border: 1px solid rgba(255, 0, 0, 0.3);
@@ -153,6 +167,12 @@ function createHUD() {
     
     const stopBtn = erpShadowRoot.getElementById('erp-ai-stop-btn');
     stopBtn.addEventListener('click', () => safeSendMessage({ action: 'stop_session' }));
+
+    const confirmBtn = erpShadowRoot.getElementById('erp-ai-confirm-btn');
+    confirmBtn.addEventListener('click', () => {
+        safeSendMessage({ type: 'action', action: 'confirm' });
+        confirmBtn.style.display = 'none';
+    });
     
     console.log("✅ HUD created successfully in Shadow DOM");
 }
@@ -167,6 +187,7 @@ function updateHUD(status) {
     if (!erpShadowRoot) return;
     const text = erpShadowRoot.getElementById('erp-ai-status-text');
     const indicator = erpShadowRoot.getElementById('erp-ai-indicator');
+    const confirmBtn = erpShadowRoot.getElementById('erp-ai-confirm-btn');
     if (!text || !indicator) return;
 
     if (status === 'listening') {
@@ -189,6 +210,11 @@ function updateHUD(status) {
         indicator.style.backgroundColor = '#FFC107';
         indicator.style.animation = 'erp-pulse-yellow 1s infinite';
         erpShadowRoot.getElementById('erp-ai-volume-container').style.display = 'none';
+    } else if (status === 'confirm') {
+        text.innerText = 'Verify Action';
+        indicator.style.backgroundColor = '#4CAF50';
+        indicator.style.animation = 'erp-pulse-green 1s infinite';
+        if (confirmBtn) confirmBtn.style.display = 'block';
     }
 }
 
@@ -196,9 +222,9 @@ function updateTranscriptHUD(source, transcript) {
     if (!erpShadowRoot) return;
     const el = erpShadowRoot.getElementById('erp-ai-transcript');
     if (!el) return;
-    const prefix = source === 'USER' ? '👤' : '🤖';
+    const prefix = source === 'USER' ? '👤' : (source === 'SYSTEM' ? '🛡️' : '🤖');
     el.innerText = `${prefix} ${transcript}`;
-    el.style.color = source === 'USER' ? '#eee' : '#2196F3';
+    el.style.color = source === 'USER' ? '#eee' : (source === 'SYSTEM' ? '#FFC107' : '#2196F3');
     
     // Clear transcript after 5 seconds if not updated
     if (el.transcriptTimeout) clearTimeout(el.transcriptTimeout);
@@ -270,7 +296,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             captureAndSend();
         }, screenCaptureInterval);
     } else if (message.type === 'command') {
-        updateHUD('processing');
         if (message.command === 'stop_audio') {
             audioQueue = []; nextStartTime = 0;
             if (audioContext && audioContext.state === 'running') audioContext.suspend().then(() => audioContext.resume());
@@ -281,6 +306,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         else if (message.command === 'navigate_to') navigateTo(message.url);
         else if (message.command === 'read_text') readText(message.query);
         else if (message.command === 'highlight_element') highlightElement(message.id);
+        else if (message.command === 'show_confirm_ui') {
+            updateHUD('confirm');
+        } else if (message.command === 'hide_confirm_ui') {
+            const confirmBtn = erpShadowRoot?.getElementById('erp-ai-confirm-btn');
+            if (confirmBtn) confirmBtn.style.display = 'none';
+            updateHUD('idle');
+        }
     } else if (message.type === 'transcription') {
         updateTranscriptHUD(message.source, message.text);
     } else if (message.type === 'audio') {
@@ -505,7 +537,7 @@ function simulateClickWithGhostCursor(id) {
     setTimeout(() => {
         cursor.style.transform = 'scale(2)'; cursor.style.opacity = '0';
         el.click();
-        setTimeout(() => { cursor.remove(); updateHUD('idle'); safeSendMessage({ action: 'action_completed', detail: `Clicked ${id}` }); }, 300);
+        setTimeout(() => { cursor.remove(); updateHUD('idle'); safeSendMessage({ type: 'status', action: 'click_element', message: 'success', detail: `Clicked ${id}` }); }, 300);
     }, 500);
 }
 
@@ -515,13 +547,13 @@ function typeTextIntoElement(id, text) {
     el.focus(); el.value = text;
     el.dispatchEvent(new Event('input', { bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
-    setTimeout(() => { updateHUD('idle'); safeSendMessage({ action: 'action_completed', detail: `Typed into ${id}` }); }, 300);
+    setTimeout(() => { updateHUD('idle'); safeSendMessage({ type: 'status', action: 'type_text', message: 'success', detail: `Typed into ${id}` }); }, 300);
 }
 
 function scrollPage(direction) {
     const scrollAmount = window.innerHeight * 0.8;
     window.scrollBy({ top: direction === 'down' ? scrollAmount : -scrollAmount, behavior: 'smooth' });
-    setTimeout(() => { updateHUD('idle'); safeSendMessage({ action: 'action_completed', detail: `Scrolled ${direction}` }); }, 500);
+    setTimeout(() => { updateHUD('idle'); safeSendMessage({ type: 'status', action: 'scroll_page', message: 'success', detail: `Scrolled ${direction}` }); }, 500);
 }
 
 function navigateTo(url) {
@@ -546,7 +578,7 @@ function readText(query) {
         const relevantLines = text.split('\n').filter(line => line.toLowerCase().includes(query.toLowerCase()));
         text = relevantLines.join('\n') || `No text found matching "${query}"`;
     }
-    safeSendMessage({ action: 'action_completed', detail: `Read text result: ${text.substring(0, 1000)}` });
+    safeSendMessage({ type: 'status', action: 'read_text', message: 'success', detail: `Read text result: ${text.substring(0, 1000)}` });
     updateHUD('idle');
 }
 
@@ -562,7 +594,7 @@ function highlightElement(id) {
         el.style.outline = originalOutline;
         el.style.boxShadow = originalBoxShadow;
         updateHUD('idle');
-        safeSendMessage({ action: 'action_completed', detail: `Highlighted ${id}.` });
+        safeSendMessage({ type: 'status', action: 'highlight_element', message: 'success', detail: `Highlighted ${id}.` });
     }, 2000);
 }
 

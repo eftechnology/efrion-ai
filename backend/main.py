@@ -160,6 +160,8 @@ async def websocket_endpoint(websocket: WebSocket):
         print(f"🔗 Connecting to Gemini Live API with model: gemini-2.5-flash-native-audio-preview-12-2025")
         async with client.aio.live.connect(model="gemini-2.5-flash-native-audio-preview-12-2025", config=config) as gemini_session:
             pending_tool_calls = {}
+            locked_commands = {} # ID -> Command map for deduplication
+            confirmed_ids = set() # Track IDs already approved by user
             stats = {"audio_chunks_sent": 0}
 
             # Queues for decoupling
@@ -225,19 +227,39 @@ async def websocket_endpoint(websocket: WebSocket):
                                 text_part = f"URL: {page_state.get('url')}\nTitle: {page_state.get('title')}\nAccessibility Tree:\n{json.dumps(page_state.get('accessibilityTree', []), indent=2)}"
                                 await text_input_queue.put(text_part)
                             
+                        elif message.get("type") == "action" and message.get("action") == "confirm":
+                            if locked_commands:
+                                print(f"🔓 Safety Lock RELEASED via HUD button.")
+                                for el_id, cmd in list(locked_commands.items()):
+                                    confirmed_ids.add(el_id)
+                                    await websocket.send_json(cmd)
+                                locked_commands.clear()
+                                await websocket.send_json({"type": "command", "command": "hide_confirm_ui"})
+
                         elif message.get("type") == "status":
                             print(f"📡 Extension Status: {message.get('message')} - {message.get('detail', '')}")
+                            
+                            # Extension sends back the action name (e.g. 'click_element') that just finished
+                            action_completed = message.get("action")
+                            
                             if pending_tool_calls:
-                                function_responses = [
-                                    types.FunctionResponse(
-                                        name=tool_name,
-                                        id=call_id,
-                                        response={"result": message.get("message"), "detail": message.get("detail", "")}
+                                function_responses = []
+                                # Find the specific call_id for the action that just completed
+                                for call_id, tool_name in list(pending_tool_calls.items()):
+                                    if action_completed and tool_name != action_completed:
+                                        continue # Only resolve the tool call that matches the completed action
+                                        
+                                    function_responses.append(
+                                        types.FunctionResponse(
+                                            name=tool_name,
+                                            id=call_id,
+                                            response={"result": message.get("message"), "detail": message.get("detail", "")}
+                                        )
                                     )
-                                    for call_id, tool_name in pending_tool_calls.items()
-                                ]
-                                await gemini_session.send_tool_response(function_responses=function_responses)
-                                pending_tool_calls.clear()
+                                    del pending_tool_calls[call_id] # Remove from pending once resolved
+                                
+                                if function_responses:
+                                    await gemini_session.send_tool_response(function_responses=function_responses)
 
                     except WebSocketDisconnect:
                         print("🔴 Extension disconnected.")
@@ -258,7 +280,19 @@ async def websocket_endpoint(websocket: WebSocket):
                                     await websocket.send_json({"type": "command", "command": "stop_audio"})
                                 
                                 if server_content.input_transcription and server_content.input_transcription.text:
-                                    await websocket.send_json({"type": "transcription", "source": "USER", "text": server_content.input_transcription.text})
+                                    transcript = server_content.input_transcription.text.lower()
+                                    await websocket.send_json({"type": "transcription", "source": "USER", "text": transcript})
+                                    
+                                    # SAFETY LOCK CHECK
+                                    affirmations = ["proceed", "yes", "go ahead", "do it", "confirm", "ok", "okay", "yep", "sure"]
+                                    if any(word in transcript for word in affirmations):
+                                        if locked_commands:
+                                            print(f"🔓 Safety Lock RELEASED via voice: '{transcript}'")
+                                            for el_id, cmd in list(locked_commands.items()):
+                                                confirmed_ids.add(el_id)
+                                                await websocket.send_json(cmd)
+                                            locked_commands.clear()
+                                            await websocket.send_json({"type": "command", "command": "hide_confirm_ui"})
 
                                 if server_content.output_transcription and server_content.output_transcription.text:
                                     await websocket.send_json({"type": "transcription", "source": "MODEL", "text": server_content.output_transcription.text})
@@ -272,13 +306,32 @@ async def websocket_endpoint(websocket: WebSocket):
                             # Handle Function Calls
                             if response.tool_call is not None:
                                 for function_call in response.tool_call.function_calls:
-                                    pending_tool_calls[function_call.id] = function_call.name
-                                    command_payload = {"type": "command", "command": function_call.name}
-                                    command_payload.update(function_call.args)
-                                    await websocket.send_json(command_payload)
+                                    name = function_call.name
+                                    args = function_call.args
+                                    el_id = args.get('id', 'global')
+                                    pending_tool_calls[function_call.id] = name
+                                    
+                                    command_payload = {"type": "command", "command": name}
+                                    command_payload.update(args)
+                                    
+                                    # STRUCTURAL SAFETY LOCK
+                                    sensitive_tools = ["click_element", "type_text", "navigate_to"]
+                                    if name in sensitive_tools:
+                                        if el_id in confirmed_ids:
+                                            print(f"⏩ Auto-Releasing confirmed action: {name}({el_id})")
+                                            await websocket.send_json(command_payload)
+                                        else:
+                                            print(f"🔒 Safety Lock ACTIVE: Intercepted {name}({json.dumps(args)})")
+                                            locked_commands[el_id] = command_payload
+                                            await websocket.send_json({"type": "command", "command": "show_confirm_ui", "action_name": name})
+                                            await websocket.send_json({
+                                                "type": "transcription", 
+                                                "source": "SYSTEM", 
+                                                "text": f"Waiting for confirmation to {name}..."
+                                            })
+                                    else:
+                                        await websocket.send_json(command_payload)
                         
-                        # If we reach here, the generator finished normally (e.g. turn boundary)
-                        # We wait a tiny bit and continue to keep the session alive
                         await asyncio.sleep(0.1)
                 except asyncio.CancelledError:
                     pass
