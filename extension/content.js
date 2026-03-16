@@ -815,17 +815,75 @@ function readText(query) {
 function highlightElement(id) {
     const el = document.querySelector(`[data-gemini-id="${id}"]`);
     if (!el) { updateHUD('idle'); return; }
+    
+    const rect = el.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+
+    // 1. Create Pulse Ring
+    const pulse = document.createElement('div');
+    pulse.style.cssText = `
+        position: fixed;
+        left: ${centerX - 25}px;
+        top: ${centerY - 25}px;
+        width: 50px;
+        height: 50px;
+        border: 4px solid #FFD700;
+        border-radius: 50%;
+        pointer-events: none;
+        z-index: 2147483646;
+        animation: erp-highlight-pulse 1s ease-out infinite;
+    `;
+
+    // 2. Create Floating Pointer (SVG Arrow)
+    const pointer = document.createElement('div');
+    pointer.style.cssText = `
+        position: fixed;
+        left: ${centerX - 15}px;
+        top: ${rect.top - 60}px;
+        width: 30px;
+        height: 30px;
+        pointer-events: none;
+        z-index: 2147483646;
+        animation: erp-highlight-float 0.6s ease-in-out infinite alternate;
+    `;
+    pointer.innerHTML = `
+        <svg viewBox="0 0 24 24" fill="#FFD700" stroke="#000" stroke-width="1">
+            <path d="M12 21l-8-9h6V3h4v9h6l-8 9z"/>
+        </svg>
+    `;
+
+    // 3. Inject Styles if missing
+    if (!document.getElementById('erp-ai-highlight-styles')) {
+        const style = document.createElement('style');
+        style.id = 'erp-ai-highlight-styles';
+        style.innerHTML = `
+            @keyframes erp-highlight-pulse {
+                0% { transform: scale(0.5); opacity: 1; border-width: 8px; }
+                100% { transform: scale(2.5); opacity: 0; border-width: 1px; }
+            }
+            @keyframes erp-highlight-float {
+                0% { transform: translateY(0); }
+                100% { transform: translateY(15px); }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    document.body.appendChild(pulse);
+    document.body.appendChild(pointer);
+
+    // Standard outline fallback
     const originalOutline = el.style.outline;
-    const originalBoxShadow = el.style.boxShadow;
-    el.style.transition = 'all 0.3s ease-in-out';
-    el.style.outline = '5px solid #FFD700';
-    el.style.boxShadow = '0 0 20px #FFD700';
+    el.style.outline = '4px solid #FFD700';
+
     setTimeout(() => {
+        pulse.remove();
+        pointer.remove();
         el.style.outline = originalOutline;
-        el.style.boxShadow = originalBoxShadow;
         updateHUD('idle');
         safeSendMessage({ type: 'status', action: 'highlight_element', message: 'success', detail: `Highlighted ${id}.` });
-    }, 2000);
+    }, 2500);
 }
 
 // ============================================================================
