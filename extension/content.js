@@ -143,6 +143,24 @@ function createHUD() {
 
     hud.innerHTML = `
         <style>
+          :host {
+            --hud-bg: rgba(25, 25, 25, 0.82);
+            --hud-border: rgba(255,255,255,0.1);
+            --hud-blur: 16px;
+            --hud-radius: 50px;
+            --hud-shadow: 0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.1);
+            --color-offline: #94a3b8;
+            --color-idle: #4CAF50;
+            --color-listening: #f44336;
+            --color-speaking: #2196F3;
+            --color-processing: #FFC107;
+            --color-confirm: #4CAF50;
+            --color-error: #ef4444;
+            --dot-size: 12px;
+            --transition-state: opacity 0.15s ease;
+            --transition-bounce: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+          }
+
           @keyframes erp-pulse-green {
             0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.7); }
             70% { transform: scale(1.1); box-shadow: 0 0 0 10px rgba(76, 175, 80, 0); }
@@ -158,10 +176,32 @@ function createHUD() {
             70% { transform: scale(1.1); box-shadow: 0 0 0 10px rgba(255, 193, 7, 0); }
             100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(255, 193, 7, 0); }
           }
-          
+          @keyframes erp-pulse-blue {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(33, 150, 243, 0.7); }
+            70% { transform: scale(1.1); box-shadow: 0 0 0 10px rgba(33, 150, 243, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(33, 150, 243, 0); }
+          }
+          @keyframes erp-pulse-error {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.9); }
+            50% { transform: scale(1.2); box-shadow: 0 0 0 12px rgba(239, 68, 68, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+          }
+          @keyframes erp-fade-in {
+            from { transform: scale(0.85); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+          }
+          @keyframes erp-text-shimmer {
+            0% { background-position: -200% center; }
+            100% { background-position: 200% center; }
+          }
+          @keyframes erp-slide-up {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+          }
+
           .btn-hover:hover { transform: translateY(-2px); filter: brightness(1.2); }
           .btn-hover:active { transform: scale(0.95); }
-          
+
           #erp-ai-minimize-btn {
             background: transparent;
             border: none;
@@ -174,7 +214,7 @@ function createHUD() {
             transition: color 0.2s, transform 0.2s;
           }
           #erp-ai-minimize-btn:hover { color: #fff; transform: scale(1.1); }
-          
+
           #erp-ai-hud.mini {
             padding: 10px;
             width: 32px;
@@ -182,20 +222,31 @@ function createHUD() {
             justify-content: center;
             gap: 0;
             border-radius: 50%;
+            cursor: pointer;
           }
           #erp-ai-hud.mini #erp-ai-status-text,
           #erp-ai-hud.mini #erp-ai-transcript,
           #erp-ai-hud.mini #erp-ai-volume-container,
           #erp-ai-hud.mini #erp-ai-start-btn,
           #erp-ai-hud.mini #erp-ai-stop-btn,
-          #erp-ai-hud.mini #erp-ai-confirm-btn {
+          #erp-ai-hud.mini #erp-ai-confirm-btn,
+          #erp-ai-hud.mini #erp-ai-confirm-detail,
+          #erp-ai-hud.mini #erp-ai-minimize-btn {
             display: none !important;
             opacity: 0;
           }
           #erp-ai-hud.mini #erp-ai-plan-container {
             display: none !important;
           }
-          
+
+          /* Mini glow rings */
+          #erp-ai-hud.mini.state-idle      { box-shadow: 0 0 0 3px rgba(76,175,80,0.6), 0 8px 32px rgba(0,0,0,0.4); }
+          #erp-ai-hud.mini.state-listening { box-shadow: 0 0 0 3px rgba(244,67,54,0.7), 0 8px 32px rgba(0,0,0,0.4); }
+          #erp-ai-hud.mini.state-processing { box-shadow: 0 0 0 3px rgba(255,193,7,0.6), 0 8px 32px rgba(0,0,0,0.4); }
+          #erp-ai-hud.mini.state-speaking  { box-shadow: 0 0 0 3px rgba(33,150,243,0.7), 0 8px 32px rgba(0,0,0,0.4); }
+          #erp-ai-hud.mini.state-confirm   { box-shadow: 0 0 0 3px rgba(76,175,80,0.8), 0 8px 32px rgba(0,0,0,0.4); }
+          #erp-ai-hud.mini.state-error     { box-shadow: 0 0 0 3px rgba(239,68,68,0.9), 0 8px 32px rgba(0,0,0,0.4); }
+
           #erp-ai-start-btn {
             background: #2563eb;
             color: white;
@@ -220,7 +271,67 @@ function createHUD() {
             transition: all 0.2s;
             box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
           }
-          .status-indicator { width: 12px; height: 12px; border-radius: 50%; transition: background-color 0.3s; }
+          .status-indicator {
+            width: var(--dot-size);
+            height: var(--dot-size);
+            border-radius: 50%;
+            transition: background-color 0.3s;
+            flex-shrink: 0;
+          }
+
+          #erp-ai-transcript {
+            border-left: 1px solid rgba(255,255,255,0.1);
+            padding-left: 15px;
+            font-size: 12px;
+            color: rgba(255,255,255,0.6);
+            max-width: 240px;
+            white-space: normal;
+            overflow: hidden;
+            display: -webkit-box;
+            -webkit-box-orient: vertical;
+            -webkit-line-clamp: 2;
+            font-weight: 400;
+            transition: opacity 0.3s ease;
+            cursor: default;
+          }
+          #erp-ai-transcript:hover { -webkit-line-clamp: unset; }
+
+          .state-speaking #erp-ai-transcript {
+            background: linear-gradient(90deg, rgba(255,255,255,0.55) 0%, rgba(96,165,250,0.95) 50%, rgba(255,255,255,0.55) 100%);
+            background-size: 200% auto;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: erp-text-shimmer 2s linear infinite;
+          }
+
+          #erp-ai-volume-container {
+            display: none;
+            align-items: flex-end;
+            height: 20px;
+            gap: 2.5px;
+          }
+          .vol-bar {
+            width: 3px;
+            border-radius: 2px 2px 0 0;
+            transition: height 0.08s ease, background-color 0.2s ease;
+            height: 3px;
+            background: #10b981;
+          }
+
+          #erp-ai-confirm-detail {
+            font-size: 11px;
+            color: #6ee7b7;
+            background: rgba(16,185,129,0.12);
+            border: 1px solid rgba(16,185,129,0.25);
+            border-radius: 10px;
+            padding: 3px 10px;
+            display: none;
+            animation: erp-fade-in 0.25s ease;
+            white-space: nowrap;
+            max-width: 160px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+          }
 
           #erp-ai-plan-container {
             position: absolute;
@@ -232,27 +343,32 @@ function createHUD() {
             border: 1px solid rgba(255,255,255,0.1);
             border-radius: 16px;
             padding: 18px;
-            width: 260px;
+            width: 280px;
             display: none;
             flex-direction: column;
             gap: 10px;
             box-shadow: 0 12px 40px rgba(0,0,0,0.5);
             animation: erp-slide-up 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
           }
-          @keyframes erp-slide-up {
-            from { transform: translateY(20px); opacity: 0; }
-            to { transform: translateY(0); opacity: 1; }
-          }
           .plan-item {
             font-size: 12.5px;
             color: #bbb;
             display: flex;
-            align-items: center;
+            align-items: flex-start;
             gap: 10px;
             transition: all 0.2s;
           }
-          .plan-item.done { color: #10b981; text-decoration: line-through; opacity: 0.6; }
-          .plan-item.active { color: #fff; font-weight: 600; transform: translateX(5px); }
+          .plan-item.done { color: #555; text-decoration: line-through; opacity: 0.55; }
+          .plan-item.active { color: #fff; font-weight: 600; background: rgba(255,255,255,0.06); border-radius: 8px; padding: 4px 6px; margin: -4px -6px; }
+          .plan-step-num {
+            width: 18px; height: 18px; border-radius: 50%;
+            background: rgba(255,255,255,0.12); color: #ccc;
+            font-size: 10px; font-weight: 700;
+            display: flex; align-items: center; justify-content: center;
+            flex-shrink: 0; margin-top: 1px;
+          }
+          .plan-item.done .plan-step-num { background: rgba(16,185,129,0.2); color: #10b981; }
+          .plan-item.active .plan-step-num { background: rgba(255,255,255,0.9); color: #111; }
         </style>
 
         <div id="erp-ai-plan-container"></div>
@@ -289,26 +405,14 @@ function createHUD() {
                 </svg>
             </button>
         </div>
-        <div id="erp-ai-transcript" style="
-            border-left: 1px solid rgba(255,255,255,0.1);
-            padding-left: 15px;
-            font-size: 12px;
-            color: rgba(255,255,255,0.6);
-            max-width: 180px;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            font-weight: 400;
-        ">Waiting for sound...</div>
-        <div id="erp-ai-volume-container" style="
-            width: 35px;
-            height: 3px;
-            background: rgba(255,255,255,0.1);
-            border-radius: 2px;
-            overflow: hidden;
-            display: none;
-        ">
-            <div id="erp-ai-volume-meter" style="width: 0%; height: 100%; background: #10b981; transition: width 0.1s;"></div>
+        <div id="erp-ai-transcript">Waiting for sound...</div>
+        <div id="erp-ai-confirm-detail"></div>
+        <div id="erp-ai-volume-container">
+            <div class="vol-bar" id="vol-b1"></div>
+            <div class="vol-bar" id="vol-b2"></div>
+            <div class="vol-bar" id="vol-b3"></div>
+            <div class="vol-bar" id="vol-b4"></div>
+            <div class="vol-bar" id="vol-b5"></div>
         </div>
     `;
 
@@ -359,9 +463,17 @@ function createHUD() {
     minBtn.addEventListener('click', () => {
         hud.classList.toggle('mini');
         const isMini = hud.classList.contains('mini');
-        minBtn.innerHTML = isMini ? 
-            '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M7 14H5v5h2v-5zm12-5h2V4h-2v5zM5 4v5h2V4H5zm14 15h2v-5h-2v5z"/></svg>' : 
+        minBtn.innerHTML = isMini ?
+            '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M7 14H5v5h2v-5zm12-5h2V4h-2v5zM5 4v5h2V4H5zm14 15h2v-5h-2v5z"/></svg>' :
             '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M19 13H5v-2h14v2z"/></svg>';
+    });
+
+    // Click mini circle to expand
+    hud.addEventListener('click', (e) => {
+        if (hud.classList.contains('mini') && !e.target.closest('button')) {
+            hud.classList.remove('mini');
+            minBtn.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M19 13H5v-2h14v2z"/></svg>';
+        }
     });
 
     startBtn.addEventListener('click', () => {
@@ -375,6 +487,8 @@ function createHUD() {
     confirmBtn.addEventListener('click', () => {
         safeSendMessage({ type: 'action', action: 'confirm' });
         confirmBtn.style.display = 'none';
+        const confirmDetail = erpShadowRoot.getElementById('erp-ai-confirm-detail');
+        if (confirmDetail) confirmDetail.style.display = 'none';
     });
 
     console.log("✅ HUD created successfully in Shadow DOM");
@@ -387,8 +501,23 @@ function removeHUD() {
     erpShadowRoot = null;
 }
 
-function updateHUD(status) {
+function setStatusText(el, newText) {
+    if (!el || el.innerText === newText) return;
+    el.style.transition = 'opacity 0.15s ease';
+    el.style.opacity = '0';
+    setTimeout(() => { el.innerText = newText; el.style.opacity = '1'; }, 150);
+}
+
+function updateHUD(status, extra = {}) {
     if (!erpShadowRoot) return;
+
+    // Sync state class on HUD element
+    const hudEl = erpShadowRoot.getElementById('erp-ai-hud');
+    if (hudEl) {
+        hudEl.className = hudEl.className.split(' ').filter(c => !c.startsWith('state-')).join(' ').trim();
+        hudEl.classList.add(`state-${status}`);
+    }
+
     const text = erpShadowRoot.getElementById('erp-ai-status-text');
     const indicator = erpShadowRoot.getElementById('erp-ai-indicator');
     const confirmBtn = erpShadowRoot.getElementById('erp-ai-confirm-btn');
@@ -398,52 +527,80 @@ function updateHUD(status) {
     
     if (!text || !indicator) return;
 
+    const volContainer = erpShadowRoot.getElementById('erp-ai-volume-container');
+    const confirmDetail = erpShadowRoot.getElementById('erp-ai-confirm-detail');
+
     if (status === 'offline') {
-        text.innerText = 'Autopilot';
-        indicator.style.backgroundColor = '#94a3b8';
+        setStatusText(text, 'Autopilot');
+        indicator.style.backgroundColor = 'var(--color-offline)';
         indicator.style.animation = 'none';
-        if (startBtn) { startBtn.style.display = 'block'; startBtn.disabled = false; startBtn.innerText = "Start"; }
+        if (startBtn) { startBtn.style.display = 'block'; startBtn.disabled = false; startBtn.innerText = 'Start'; }
         if (stopBtn) stopBtn.style.display = 'none';
         if (confirmBtn) confirmBtn.style.display = 'none';
+        if (confirmDetail) confirmDetail.style.display = 'none';
         if (transcript) transcript.style.display = 'none';
         const planContainer = erpShadowRoot.getElementById('erp-ai-plan-container');
         if (planContainer) planContainer.style.display = 'none';
-        erpShadowRoot.getElementById('erp-ai-volume-container').style.display = 'none';
+        if (volContainer) volContainer.style.display = 'none';
     } else if (status === 'listening') {
-        text.innerText = 'Listening...';
-        indicator.style.backgroundColor = '#f44336';
+        setStatusText(text, 'Listening...');
+        indicator.style.backgroundColor = 'var(--color-listening)';
         indicator.style.animation = 'erp-pulse-red 1s infinite';
         if (startBtn) startBtn.style.display = 'none';
         if (stopBtn) stopBtn.style.display = 'flex';
-        if (transcript) transcript.style.display = 'block';
-        erpShadowRoot.getElementById('erp-ai-volume-container').style.display = 'block';
+        if (transcript) transcript.style.display = '-webkit-box';
+        if (volContainer) volContainer.style.display = 'flex';
     } else if (status === 'idle') {
-        text.innerText = 'AI Online';
-        indicator.style.backgroundColor = '#4CAF50';
+        setStatusText(text, 'AI Online');
+        indicator.style.backgroundColor = 'var(--color-idle)';
         indicator.style.animation = 'erp-pulse-green 1.5s infinite';
         if (startBtn) startBtn.style.display = 'none';
         if (stopBtn) stopBtn.style.display = 'flex';
-        if (transcript) transcript.style.display = 'block';
-        erpShadowRoot.getElementById('erp-ai-volume-container').style.display = 'block';
+        if (confirmBtn) confirmBtn.style.display = 'none';
+        if (confirmDetail) confirmDetail.style.display = 'none';
+        if (transcript) transcript.style.display = '-webkit-box';
+        if (volContainer) volContainer.style.display = 'flex';
     } else if (status === 'speaking') {
-        text.innerText = 'AI Speaking...';
-        indicator.style.backgroundColor = '#2196F3';
-        indicator.style.animation = 'none';
-        erpShadowRoot.getElementById('erp-ai-volume-container').style.display = 'none';
+        setStatusText(text, 'AI Speaking...');
+        indicator.style.backgroundColor = 'var(--color-speaking)';
+        indicator.style.animation = 'erp-pulse-blue 1.5s infinite';
+        if (volContainer) volContainer.style.display = 'none';
     } else if (status === 'processing') {
-        text.innerText = 'Thinking...';
-        indicator.style.backgroundColor = '#FFC107';
+        setStatusText(text, 'Thinking...');
+        indicator.style.backgroundColor = 'var(--color-processing)';
         indicator.style.animation = 'erp-pulse-yellow 1s infinite';
-        erpShadowRoot.getElementById('erp-ai-volume-container').style.display = 'none';
+        if (volContainer) volContainer.style.display = 'none';
     } else if (status === 'confirm') {
-        text.innerText = 'Verify Action';
-        indicator.style.backgroundColor = '#4CAF50';
+        setStatusText(text, 'Verify Action');
+        indicator.style.backgroundColor = 'var(--color-confirm)';
         indicator.style.animation = 'erp-pulse-green 1s infinite';
         if (confirmBtn) confirmBtn.style.display = 'block';
+        if (confirmDetail) {
+            if (extra.action) {
+                confirmDetail.innerText = extra.action;
+                confirmDetail.style.display = 'block';
+            } else {
+                confirmDetail.style.display = 'none';
+            }
+        }
+    } else if (status === 'error') {
+        setStatusText(text, 'Error');
+        indicator.style.backgroundColor = 'var(--color-error)';
+        indicator.style.animation = 'erp-pulse-error 0.6s infinite';
+        if (startBtn) { startBtn.style.display = 'block'; startBtn.disabled = false; startBtn.innerText = 'Retry'; }
+        if (stopBtn) stopBtn.style.display = 'flex';
+        if (confirmBtn) confirmBtn.style.display = 'none';
+        if (confirmDetail) confirmDetail.style.display = 'none';
+        if (volContainer) volContainer.style.display = 'none';
+        if (transcript) {
+            transcript.style.display = '-webkit-box';
+            transcript.style.color = '#f87171';
+            transcript.innerText = '⚠ Session ended';
+        }
     }
 }
 
-function updatePlanHUD(steps) {
+function updatePlanHUD(steps, activeIndex = 0) {
     if (!erpShadowRoot) return;
     const container = erpShadowRoot.getElementById('erp-ai-plan-container');
     if (!container) return;
@@ -453,15 +610,25 @@ function updatePlanHUD(steps) {
         return;
     }
 
+    const total = steps.length;
+    const current = Math.min(activeIndex + 1, total);
+
     container.style.display = 'flex';
     container.innerHTML = `
-        <div style="font-weight: 700; font-size: 11px; text-transform: uppercase; color: #888; margin-bottom: 5px;">Current Plan</div>
-        ${steps.map((step, i) => `
-            <div class="plan-item ${i === 0 ? 'active' : ''}">
-                <div style="width: 6px; height: 6px; border-radius: 50%; background: ${i === 0 ? '#fff' : '#555'}"></div>
-                ${step}
-            </div>
-        `).join('')}
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+            <div style="font-weight:700; font-size:11px; text-transform:uppercase; color:#888;">Current Plan</div>
+            <div style="font-size:11px; font-weight:700; color:#10b981; background:rgba(16,185,129,0.15); border:1px solid rgba(16,185,129,0.3); border-radius:10px; padding:2px 8px;">${current} / ${total}</div>
+        </div>
+        ${steps.map((step, i) => {
+            const isDone = i < activeIndex;
+            const isActive = i === activeIndex;
+            const label = isDone ? '✓' : (i + 1);
+            const cls = isDone ? 'done' : (isActive ? 'active' : '');
+            return `<div class="plan-item ${cls}">
+                <div class="plan-step-num">${label}</div>
+                <span>${typeof step === 'string' ? step : (step.text || step.description || JSON.stringify(step))}</span>
+            </div>`;
+        }).join('')}
     `;
 }
 
@@ -470,15 +637,26 @@ function updateTranscriptHUD(source, transcript) {
     const el = erpShadowRoot.getElementById('erp-ai-transcript');
     if (!el) return;
     const prefix = source === 'USER' ? '👤' : (source === 'SYSTEM' ? '🛡️' : '🤖');
-    el.innerText = `${prefix} ${transcript}`;
-    el.style.color = source === 'USER' ? '#eee' : (source === 'SYSTEM' ? '#FFC107' : '#2196F3');
-    
-    // Clear transcript after 5 seconds if not updated
+    const newText = `${prefix} ${transcript}`;
+    const newColor = source === 'USER' ? '#eee' : (source === 'SYSTEM' ? '#FFC107' : '#60a5fa');
+
+    // Cross-fade update
+    el.style.transition = 'opacity 0.2s ease';
+    el.style.opacity = '0';
+    setTimeout(() => {
+        el.innerText = newText;
+        el.style.color = newColor;
+        el.style.webkitTextFillColor = '';
+        el.style.opacity = '1';
+    }, 200);
+
+    // Fade out after 6s
     if (el.transcriptTimeout) clearTimeout(el.transcriptTimeout);
     el.transcriptTimeout = setTimeout(() => {
-        el.innerText = '...';
-        el.style.color = '#555';
-    }, 5000);
+        el.style.transition = 'opacity 0.4s ease';
+        el.style.opacity = '0';
+        setTimeout(() => { el.innerText = ''; }, 400);
+    }, 6000);
 }
 
 let lastAccessibilityTree = new Map(); // ID -> Element map for diffing
@@ -570,7 +748,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         updateHUD('idle');
         // Set volume container visible when connected
         const vol = erpShadowRoot?.getElementById('erp-ai-volume-container');
-        if (vol) vol.style.display = 'block';
+        if (vol) vol.style.display = 'flex';
         
         startRecording();
         
@@ -614,15 +792,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         else if (message.command === 'show_confirm_ui') {
             const hud = erpShadowRoot?.getElementById('erp-ai-hud');
             hud?.classList.remove('mini');
-            updateHUD('confirm');
+            updateHUD('confirm', { action: message.actionDescription || '' });
         } else if (message.command === 'hide_confirm_ui') {
             const confirmBtn = erpShadowRoot?.getElementById('erp-ai-confirm-btn');
             if (confirmBtn) confirmBtn.style.display = 'none';
+            const confirmDetail = erpShadowRoot?.getElementById('erp-ai-confirm-detail');
+            if (confirmDetail) confirmDetail.style.display = 'none';
             updateHUD('idle');
         } else if (message.command === 'update_plan') {
             const hud = erpShadowRoot?.getElementById('erp-ai-hud');
             hud?.classList.remove('mini');
-            updatePlanHUD(message.steps);
+            updatePlanHUD(message.steps, message.activeIndex ?? 0);
         } else if (message.command === 'undo_last_action') {
             undoLastAction();
         }
@@ -631,8 +811,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     } else if (message.type === 'audio') {
         playAudio(message.data, message.mime_type);
     } else if (message.type === 'error') {
-        alert(message.message);
-        safeSendMessage({ action: 'stop_session' });
+        console.error('Session error:', message.message);
+        updateHUD('error');
+        updateTranscriptHUD('SYSTEM', message.message || 'An error occurred');
     } else if (message.action === 'stop') {
         stopRecording(); 
         updateHUD('offline');
@@ -839,8 +1020,17 @@ async function startRecording() {
                     if (abs > maxVal) maxVal = abs;
                 }
                 const volumePercent = Math.min(100, (maxVal / 32768) * 100);
-                const meter = erpShadowRoot?.getElementById('erp-ai-volume-meter');
-                if (meter) meter.style.width = `${volumePercent}%`;
+
+                // 5-bar equalizer
+                const barWeights = [0.55, 0.8, 1.0, 0.8, 0.55];
+                for (let b = 1; b <= 5; b++) {
+                    const bar = erpShadowRoot?.getElementById(`vol-b${b}`);
+                    if (!bar) continue;
+                    const noise = 1 + (Math.random() * 0.3 - 0.15);
+                    const h = Math.max(3, volumePercent * barWeights[b - 1] * noise * 0.2);
+                    bar.style.height = `${h}px`;
+                    bar.style.backgroundColor = volumePercent > 80 ? '#ef4444' : volumePercent > 50 ? '#f59e0b' : '#10b981';
+                }
 
                 const base64Audio = arrayBufferToBase64(pcm16Buffer);
                 safeSendMessage({ action: 'send_audio', data: base64Audio });
