@@ -1189,7 +1189,9 @@ async function startRecording() {
         let totalSentChunks = 0;
 
         workletNode.port.onmessage = (event) => {
+            if (!audioInputContext) return; // Safety check for race condition during cleanup
             const msg = event.data;
+
             if (msg.type === 'pcm_data') {
                 const inputChannel = msg.buffer; // Raw Float32Array from worklet
 
@@ -1243,9 +1245,19 @@ async function startRecording() {
         safeSendMessage({ action: 'stop_session' });
     }
 }function stopRecording() {
-    if (workletNode) { workletNode.disconnect(); workletNode = null; }
-    if (audioInputContext) { audioInputContext.close(); audioInputContext = null; }
-    if (audioStream) { audioStream.getTracks().forEach(track => track.stop()); audioStream = null; }
+    if (workletNode) { 
+        workletNode.port.onmessage = null;
+        workletNode.disconnect(); 
+        workletNode = null; 
+    }
+    if (audioInputContext) { 
+        audioInputContext.close(); 
+        audioInputContext = null; 
+    }
+    if (audioStream) { 
+        audioStream.getTracks().forEach(track => track.stop()); 
+        audioStream = null; 
+    }
     console.log("⏹️ Audio session closed");
 }
 
