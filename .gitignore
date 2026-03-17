@@ -22,3 +22,4 @@ PROJECT_RULES.md
 
 # Logs
 *.log
+.DS_Store

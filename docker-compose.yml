@@ -34,6 +34,7 @@ services:
       - DEMO_USERNAME=${DEMO_USERNAME}
       - DEMO_PASSWORD=${DEMO_PASSWORD}
       - SESSION_TOKEN=${SESSION_TOKEN}
+      - NEXT_PUBLIC_GA_ID=${GA_MEASUREMENT_ID}
     labels:
       - traefik.enable=true
       - traefik.http.routers.website.rule=Host(`ai.efrion.com`)
