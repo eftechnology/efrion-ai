@@ -16,6 +16,10 @@ COPY . .
 # Disable Next.js telemetry during build
 ENV NEXT_TELEMETRY_DISABLED=1
 
+# Analytics — baked in at build time (NEXT_PUBLIC_* vars are not available at runtime)
+ARG NEXT_PUBLIC_GA_ID
+ENV NEXT_PUBLIC_GA_ID=${NEXT_PUBLIC_GA_ID}
+
 RUN pnpm build
 
 # ── runner stage ──────────────────────────────────────────────────────────────
