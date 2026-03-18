@@ -10,8 +10,8 @@ function LoginForm() {
   const searchParams = useSearchParams();
   const from = searchParams.get("from") || "/demo";
 
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
+  const [email, setEmail] = useState("");
+  const [accessCode, setAccessCode] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -24,7 +24,7 @@ function LoginForm() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ email, accessCode }),
       });
 
       const data = await res.json();
@@ -60,40 +60,43 @@ function LoginForm() {
         <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-8 backdrop-blur-sm">
           <h1 className="mb-1 text-xl font-bold text-white">Sign in</h1>
           <p className="mb-6 text-sm text-slate-500">
-            Enter the credentials sent to you by the EFRION team.
+            Use the email and access code sent to you after your request was approved.
           </p>
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="username" className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                Username
+              <label htmlFor="email" className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                Email Address
               </label>
               <input
-                id="username"
-                type="text"
-                autoComplete="username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                id="email"
+                type="email"
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 required
-                placeholder="your-username"
+                placeholder="jane@company.com"
                 className="rounded-xl border border-white/[0.08] bg-white/[0.04] px-4 py-3 text-sm text-white placeholder-slate-600 outline-none transition focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20"
               />
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="password" className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                Password
+              <label htmlFor="accessCode" className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                Access Code
               </label>
               <input
-                id="password"
-                type="password"
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                id="accessCode"
+                type="text"
+                autoComplete="off"
+                value={accessCode}
+                onChange={(e) => setAccessCode(e.target.value.trim())}
                 required
-                placeholder="••••••••"
-                className="rounded-xl border border-white/[0.08] bg-white/[0.04] px-4 py-3 text-sm text-white placeholder-slate-600 outline-none transition focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20"
+                placeholder="Paste your access code"
+                className="rounded-xl border border-white/[0.08] bg-white/[0.04] px-4 py-3 font-mono text-sm text-green-400 placeholder-slate-600 outline-none transition focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20"
               />
+              <p className="text-xs text-slate-600">
+                The 32-character code from your approval email.
+              </p>
             </div>
 
             {error && (

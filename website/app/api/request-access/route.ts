@@ -5,6 +5,7 @@ import nodemailer from 'nodemailer';
 import { render } from '@react-email/render';
 import AdminNotificationEmail from '@/emails/AdminNotificationEmail';
 import AccessRequestConfirmEmail from '@/emails/AccessRequestConfirmEmail';
+import { createPendingEntry } from '@/lib/access-tokens';
 
 // ── Cloudflare Turnstile verification ────────────────────────────────────────
 async function verifyTurnstile(token: string, ip: string): Promise<boolean> {
@@ -86,7 +87,7 @@ function validate(body: Record<string, unknown>): string | null {
 
 // ── Telegram notification ─────────────────────────────────────────────────────
 async function sendTelegram(entry: {
-  name: string; email: string; company: string;
+  id: string; name: string; email: string; company: string;
   role: string; erpSystem: string; message: string; submittedAt: string;
 }) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -109,15 +110,32 @@ async function sendTelegram(entry: {
     `🕐 ${new Date(entry.submittedAt).toUTCString()}`,
   ].filter(Boolean).join('\n');
 
+  // Build approve button URL if admin secret is configured
+  const adminSecret = process.env.ADMIN_SECRET;
+  const appUrl = process.env.APP_URL ?? 'https://ai.efrion.com';
+  const approveUrl = adminSecret
+    ? `${appUrl}/api/admin/approve?id=${entry.id}&secret=${adminSecret}`
+    : null;
+
+  const payload: Record<string, unknown> = {
+    chat_id: chatId,
+    text: lines,
+    parse_mode: 'HTML',
+  };
+
+  if (approveUrl) {
+    payload.reply_markup = {
+      inline_keyboard: [[
+        { text: '✅ Approve Access', url: approveUrl },
+      ]],
+    };
+  }
+
   try {
     await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text: lines,
-        parse_mode: 'HTML',
-      }),
+      body: JSON.stringify(payload),
     });
   } catch (err) {
     console.error('Failed to send Telegram notification:', err);
@@ -179,19 +197,18 @@ export async function POST(request: Request) {
 
   const { name, email, company, role, erpSystem, message } = body as Record<string, string>;
 
-  const entry = {
-    id: Date.now(),
-    name:      name.trim(),
-    email:     email.trim().toLowerCase(),
-    company:   (company  ?? '').trim(),
-    role:      (role     ?? '').trim(),
-    erpSystem: (erpSystem ?? '').trim(),
-    message:   (message  ?? '').trim(),
+  // ── Create pending token entry ────────────────────────────────────────────
+  const entry = createPendingEntry({
+    name:        name.trim(),
+    email:       email.trim().toLowerCase(),
+    company:     (company   ?? '').trim(),
+    role:        (role      ?? '').trim(),
+    erpSystem:   (erpSystem ?? '').trim(),
+    message:     (message   ?? '').trim(),
     submittedAt: new Date().toISOString(),
-    status: 'pending',
-  };
+  });
 
-  // ── Persist to JSON file (backup, max 1000 entries) ───────────────────────
+  // ── Also persist to legacy backup JSON ───────────────────────────────────
   try {
     const dataDir = path.join(process.cwd(), 'data');
     if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
@@ -199,12 +216,11 @@ export async function POST(request: Request) {
     const existing: unknown[] = fs.existsSync(filePath)
       ? JSON.parse(fs.readFileSync(filePath, 'utf-8'))
       : [];
-    existing.push(entry);
-    // Keep only the last 1000 entries to bound file size
+    existing.push({ ...entry });
     if (existing.length > 1000) existing.splice(0, existing.length - 1000);
     fs.writeFileSync(filePath, JSON.stringify(existing, null, 2));
   } catch (err) {
-    console.error('Failed to persist access request:', err);
+    console.error('Failed to persist access request backup:', err);
   }
 
   // ── Telegram notification ─────────────────────────────────────────────────
