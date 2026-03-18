@@ -1,3 +1,7 @@
+"use client";
+
+import { analytics } from "@/lib/analytics";
+
 export default function Hero() {
   return (
     <section className="relative flex min-h-screen items-center overflow-hidden px-6 pt-16">
@@ -48,6 +52,7 @@ export default function Hero() {
           <div className="flex flex-wrap items-center gap-4">
             <a
               href="/request-access"
+              onClick={() => analytics.clickRequestAccess("hero")}
               className="flex items-center gap-2 rounded-full bg-blue-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-600/30 transition-all hover:bg-blue-500 hover:shadow-blue-500/40 active:scale-95"
             >
               Request Demo Access
@@ -58,6 +63,7 @@ export default function Hero() {
             <a
               href="/downloads/efrion-ai-extension.crx"
               download
+              onClick={() => analytics.clickDownloadExtension("hero")}
               className="flex items-center gap-2 rounded-full border border-white/10 px-6 py-3 text-sm font-semibold text-white transition-all hover:border-white/20 hover:bg-white/5 active:scale-95"
             >
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

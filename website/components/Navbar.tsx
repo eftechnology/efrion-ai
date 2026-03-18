@@ -1,4 +1,7 @@
+"use client";
+
 import Logo from "./Logo";
+import { analytics } from "@/lib/analytics";
 
 export default function Navbar() {
   return (
@@ -27,6 +30,7 @@ export default function Navbar() {
             <a
               key={link.href}
               href={link.href}
+              onClick={() => analytics.navClick(link.label)}
               className="text-sm text-slate-400 transition-colors hover:text-white"
             >
               {link.label}
@@ -39,6 +43,7 @@ export default function Navbar() {
           href="https://github.com/eftechnology/efrion-ai"
           target="_blank"
           rel="noopener noreferrer"
+          onClick={() => analytics.clickGitHub("navbar")}
           className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-white transition-all hover:border-white/20 hover:bg-white/10"
         >
           <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current" aria-hidden>

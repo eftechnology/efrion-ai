@@ -1,3 +1,7 @@
+"use client";
+
+import { analytics } from "@/lib/analytics";
+
 export default function Contact() {
   return (
     <section id="contact" className="relative px-6 py-28">
@@ -20,6 +24,7 @@ export default function Contact() {
 
         <a
           href="mailto:hello@efrion.com"
+          onClick={() => analytics.clickContactEmail()}
           className="mt-10 inline-flex items-center gap-3 rounded-full bg-white/5 border border-white/10 px-8 py-4 text-lg font-semibold text-white transition-all hover:bg-white/10 hover:border-white/20 hover:scale-105 active:scale-100"
         >
           <svg className="h-5 w-5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
@@ -34,6 +39,7 @@ export default function Contact() {
             href="https://github.com/eftechnology/efrion-ai"
             target="_blank"
             rel="noopener noreferrer"
+            onClick={() => analytics.clickGitHub("contact")}
             className="text-slate-400 underline underline-offset-4 hover:text-white transition-colors"
           >
             GitHub

@@ -3,6 +3,7 @@
 import { useState, useRef, FormEvent } from "react";
 import Logo from "@/components/Logo";
 import { Turnstile, type TurnstileInstance } from "@marsidev/react-turnstile";
+import { analytics } from "@/lib/analytics";
 
 const erpSystems = [
   "SAP",
@@ -39,6 +40,7 @@ export default function RequestAccessPage() {
     e.preventDefault();
     setError("");
     setLoading(true);
+    analytics.formSubmit();
 
     if (!turnstileToken) {
       setError("Please complete the security check.");
@@ -56,11 +58,15 @@ export default function RequestAccessPage() {
       const data = await res.json();
 
       if (res.ok) {
+        analytics.formSuccess(form.erpSystem);
         setSubmitted(true);
       } else {
-        setError(data.error || "Something went wrong.");
+        const reason = data.error || "Something went wrong.";
+        analytics.formError(reason);
+        setError(reason);
       }
     } catch {
+      analytics.formError("network_error");
       setError("Network error. Please try again.");
     } finally {
       setLoading(false);
