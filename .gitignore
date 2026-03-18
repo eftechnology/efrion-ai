@@ -26,3 +26,6 @@ PROJECT_RULES.md
 
 # keys
 extension.pem
+
+# User data — never commit
+website/data/
