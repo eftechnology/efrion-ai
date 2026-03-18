@@ -30,6 +30,7 @@ services:
       dockerfile: Dockerfile
       args:
         - NEXT_PUBLIC_GA_ID=${GA_MEASUREMENT_ID}
+        - NEXT_PUBLIC_TURNSTILE_SITE_KEY=${NEXT_PUBLIC_TURNSTILE_SITE_KEY}
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3000').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))\""]
@@ -50,6 +51,7 @@ services:
       - NOTIFY_EMAIL=${NOTIFY_EMAIL:-hello@efrion.com}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+      - TURNSTILE_SECRET_KEY=${TURNSTILE_SECRET_KEY}
     labels:
       - traefik.enable=true
       - traefik.http.routers.website.rule=Host(`ai.efrion.com`)

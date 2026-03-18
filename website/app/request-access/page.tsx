@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, FormEvent } from "react";
+import { useState, useRef, FormEvent } from "react";
 import Logo from "@/components/Logo";
+import { Turnstile, type TurnstileInstance } from "@marsidev/react-turnstile";
 
 const erpSystems = [
   "SAP",
@@ -27,6 +28,8 @@ export default function RequestAccessPage() {
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const turnstileRef = useRef<TurnstileInstance>(null);
+  const [turnstileToken, setTurnstileToken] = useState("");
 
   function update(field: string, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -37,11 +40,17 @@ export default function RequestAccessPage() {
     setError("");
     setLoading(true);
 
+    if (!turnstileToken) {
+      setError("Please complete the security check.");
+      setLoading(false);
+      return;
+    }
+
     try {
       const res = await fetch("/api/request-access", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...form, turnstileToken }),
       });
 
       const data = await res.json();
@@ -55,6 +64,9 @@ export default function RequestAccessPage() {
       setError("Network error. Please try again.");
     } finally {
       setLoading(false);
+      // Reset Turnstile so user can retry on error
+      turnstileRef.current?.reset();
+      setTurnstileToken("");
     }
   }
 
@@ -186,6 +198,15 @@ export default function RequestAccessPage() {
                 />
               </Field>
 
+              {/* Turnstile CAPTCHA */}
+              <Turnstile
+                ref={turnstileRef}
+                siteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "1x00000000000000000000AA"}
+                onSuccess={setTurnstileToken}
+                onExpire={() => setTurnstileToken("")}
+                options={{ theme: "dark", size: "normal" }}
+              />
+
               {error && (
                 <div className="flex items-center gap-2 rounded-xl border border-red-500/20 bg-red-500/8 px-4 py-3 text-sm text-red-400">
                   <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -197,7 +218,7 @@ export default function RequestAccessPage() {
 
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || !turnstileToken}
                 className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-600/25 transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {loading ? (

@@ -6,6 +6,25 @@ import { render } from '@react-email/render';
 import AdminNotificationEmail from '@/emails/AdminNotificationEmail';
 import AccessRequestConfirmEmail from '@/emails/AccessRequestConfirmEmail';
 
+// ── Cloudflare Turnstile verification ────────────────────────────────────────
+async function verifyTurnstile(token: string, ip: string): Promise<boolean> {
+  const secret = process.env.TURNSTILE_SECRET_KEY;
+  if (!secret) return true; // skip verification if not configured
+
+  try {
+    const res = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ secret, response: token, remoteip: ip }),
+    });
+    const data = await res.json() as { success: boolean };
+    return data.success === true;
+  } catch (err) {
+    console.error('Turnstile verification failed:', err);
+    return false;
+  }
+}
+
 // ── Rate limiting (in-memory, per IP) ────────────────────────────────────────
 const rateLimit = new Map<string, { count: number; resetAt: number }>();
 const RATE_LIMIT = 3;          // max submissions
@@ -141,6 +160,16 @@ export async function POST(request: Request) {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: 'Invalid request body.' }, { status: 400 });
+  }
+
+  // Verify Turnstile token
+  const turnstileToken = typeof body.turnstileToken === 'string' ? body.turnstileToken : '';
+  if (!turnstileToken) {
+    return NextResponse.json({ error: 'Security check required.' }, { status: 400 });
+  }
+  const turnstileOk = await verifyTurnstile(turnstileToken, ip);
+  if (!turnstileOk) {
+    return NextResponse.json({ error: 'Security check failed. Please try again.' }, { status: 400 });
   }
 
   const validationError = validate(body);
