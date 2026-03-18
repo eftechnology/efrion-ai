@@ -2,8 +2,24 @@
 
 import { useState, useRef, useEffect, FormEvent } from "react";
 import Logo from "@/components/Logo";
-import { Turnstile, type TurnstileInstance } from "@marsidev/react-turnstile";
 import { analytics } from "@/lib/analytics";
+
+declare global {
+  interface Window {
+    turnstile?: {
+      render: (container: HTMLElement, options: {
+        sitekey: string;
+        callback?: (token: string) => void;
+        "expired-callback"?: () => void;
+        "error-callback"?: () => void;
+        theme?: "dark" | "light" | "auto";
+        size?: "normal" | "compact";
+      }) => string;
+      reset: (widgetId: string) => void;
+      remove: (widgetId: string) => void;
+    };
+  }
+}
 
 const erpSystems = [
   "SAP",
@@ -29,8 +45,66 @@ export default function RequestAccessPage() {
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const turnstileRef = useRef<TurnstileInstance>(null);
-  const [turnstileToken, setTurnstileToken] = useState("");
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const turnstileRef = useRef<HTMLDivElement>(null);
+  const [widgetId, setWidgetId] = useState<string | null>(null);
+  const widgetIdRef = useRef<string | null>(null);
+
+
+  useEffect(() => {
+    // Inject Turnstile script if not already present
+    const SCRIPT_SRC = "https://challenges.cloudflare.com/turnstile/v0/api.js";
+    if (!document.querySelector(`script[src="${SCRIPT_SRC}"]`)) {
+      const script = document.createElement("script");
+      script.src = SCRIPT_SRC;
+      script.async = true;
+      document.head.appendChild(script);
+    }
+
+    let intervalId: ReturnType<typeof setInterval> | undefined;
+
+    const initializeTurnstile = () => {
+      if (!turnstileRef.current || !window.turnstile) return;
+
+      if (widgetIdRef.current) {
+        try { window.turnstile.remove(widgetIdRef.current); } catch {}
+      }
+
+      try {
+        const id = window.turnstile.render(turnstileRef.current, {
+          sitekey: process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "1x00000000000000000000AA",
+          theme: "dark",
+          callback: (token: string) => setTurnstileToken(token),
+          "expired-callback": () => setTurnstileToken(null),
+          "error-callback": () => setTurnstileToken(null),
+        });
+        setWidgetId(id);
+        widgetIdRef.current = id;
+      } catch (e) {
+        console.error("Failed to render Turnstile widget", e);
+      }
+    };
+
+    if (window.turnstile) {
+      initializeTurnstile();
+    } else {
+      intervalId = setInterval(() => {
+        if (window.turnstile) {
+          clearInterval(intervalId);
+          initializeTurnstile();
+        }
+      }, 100);
+    }
+
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+      if (widgetIdRef.current && window.turnstile) {
+        try { window.turnstile.remove(widgetIdRef.current); } catch {}
+      }
+    };
+  }, []);
+
+
 
   function update(field: string, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -73,8 +147,10 @@ export default function RequestAccessPage() {
     } finally {
       setLoading(false);
       // Reset Turnstile so user can retry on error
-      turnstileRef.current?.reset();
-      setTurnstileToken("");
+      if (widgetIdRef.current && window.turnstile) {
+        try { window.turnstile.reset(widgetIdRef.current); } catch {}
+      }
+      setTurnstileToken(null);
     }
   }
 
@@ -200,14 +276,10 @@ export default function RequestAccessPage() {
                 />
               </Field>
 
-              {/* Turnstile CAPTCHA */}
-              <Turnstile
-                ref={turnstileRef}
-                siteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "1x00000000000000000000AA"}
-                onSuccess={setTurnstileToken}
-                onExpire={() => setTurnstileToken("")}
-                options={{ theme: "dark", size: "normal" }}
-              />
+              {/* Turnstile Widget */}
+              <div className="flex justify-center my-4">
+                <div ref={turnstileRef}></div>
+              </div>
 
               {error && (
                 <div className="flex items-center gap-2 rounded-xl border border-red-500/20 bg-red-500/8 px-4 py-3 text-sm text-red-400">
