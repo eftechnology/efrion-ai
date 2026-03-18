@@ -22,6 +22,7 @@ export default function Navbar() {
             { label: "How It Works", href: "#how-it-works" },
             { label: "Architecture", href: "#architecture" },
             { label: "Demo", href: "#demo" },
+            { label: "Contact", href: "#contact" },
           ].map((link) => (
             <a
               key={link.href}

@@ -1,3 +1,5 @@
+import Image from "next/image";
+
 const steps = [
   {
     number: "01",
@@ -93,6 +95,67 @@ export default function HowItWorks() {
               </div>
             </div>
           ))}
+        </div>
+
+        {/* Extension popup callout */}
+        <div className="mt-20 grid gap-10 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-8 lg:grid-cols-2 lg:items-center lg:p-12">
+          {/* Image */}
+          <div className="flex justify-center">
+            <div className="relative w-48 overflow-hidden rounded-2xl border border-white/10 shadow-2xl shadow-black/60">
+              <Image
+                src="/media/extension-popup.jpg"
+                alt="EFRION Chrome Extension popup"
+                width={400}
+                height={600}
+                className="w-full"
+              />
+            </div>
+          </div>
+
+          {/* Copy */}
+          <div className="flex flex-col gap-5">
+            <span className="w-fit rounded-full border border-blue-500/20 bg-blue-500/8 px-3 py-1 text-xs font-semibold uppercase tracking-widest text-blue-400">
+              Chrome Extension
+            </span>
+            <h3 className="text-2xl font-bold text-white lg:text-3xl">
+              One click to activate.<br />Any ERP, instantly.
+            </h3>
+            <p className="text-slate-400 leading-relaxed">
+              Install the EFRION Chrome Extension, open any ERP interface, and click the icon. The AI autopilot attaches to the page — no configuration, no integrations, no API keys required on your end.
+            </p>
+            <div className="flex flex-col gap-2 text-sm text-slate-500">
+              {[
+                "Works on any web-based ERP",
+                "Manifest V3 — minimal permissions",
+                "Session persists across page navigations",
+              ].map((item) => (
+                <span key={item} className="flex items-center gap-2">
+                  <span className="h-1.5 w-1.5 rounded-full bg-green-400 shrink-0" />
+                  {item}
+                </span>
+              ))}
+            </div>
+            <div className="mt-2 flex flex-wrap gap-3">
+              <a
+                href="/downloads/efrion-ai-extension.crx"
+                download
+                className="flex items-center gap-2 rounded-full bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-600/30 transition-all hover:bg-blue-500 active:scale-95"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                </svg>
+                Download Extension
+              </a>
+              <a
+                href="https://github.com/eftechnology/efrion-ai"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-5 py-2.5 text-sm font-medium text-white transition-all hover:border-white/20 hover:bg-white/10"
+              >
+                View on GitHub →
+              </a>
+            </div>
+          </div>
         </div>
       </div>
     </section>
