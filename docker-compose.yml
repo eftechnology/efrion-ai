@@ -36,7 +36,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 20s
+      start_period: 60s
     environment:
       - NODE_ENV=production
       - DEMO_USERNAME=${DEMO_USERNAME}
@@ -62,7 +62,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 15s
+      start_period: 30s
     environment:
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - ENABLE_SAFETY_LOCK=${ENABLE_SAFETY_LOCK:-false}
