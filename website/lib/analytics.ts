@@ -41,6 +41,9 @@ export const analytics = {
   clickGitHub: (source: string) =>
     track('github_click', { source }),
 
+  clickYouTube: (source: string) =>
+    track('youtube_click', { source }),
+
   clickContactEmail: () =>
     track('contact_email_click'),
 

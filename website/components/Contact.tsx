@@ -44,6 +44,16 @@ export default function Contact() {
           >
             GitHub
           </a>
+          {" "}·{" "}
+          <a
+            href="https://www.youtube.com/@efrion-ai"
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => analytics.clickYouTube("contact")}
+            className="text-slate-400 underline underline-offset-4 hover:text-red-400 transition-colors"
+          >
+            YouTube
+          </a>
         </p>
       </div>
     </section>
