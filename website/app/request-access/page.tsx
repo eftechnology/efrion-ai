@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, FormEvent } from "react";
+import { useState, useRef, useEffect, FormEvent } from "react";
 import Logo from "@/components/Logo";
 import { Turnstile, type TurnstileInstance } from "@marsidev/react-turnstile";
 import { analytics } from "@/lib/analytics";
@@ -179,17 +179,11 @@ export default function RequestAccessPage() {
 
               {/* ERP System */}
               <Field label="ERP System you use" htmlFor="erp">
-                <select
-                  id="erp"
+                <ErpSelect
                   value={form.erpSystem}
-                  onChange={(e) => update("erpSystem", e.target.value)}
-                  className={inputCls}
-                >
-                  <option value="">Select your ERP...</option>
-                  {erpSystems.map((s) => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </select>
+                  onChange={(v) => update("erpSystem", v)}
+                  options={erpSystems}
+                />
               </Field>
 
               {/* Message */}
@@ -272,6 +266,87 @@ function Field({
         {label}
       </label>
       {children}
+    </div>
+  );
+}
+
+function ErpSelect({
+  value,
+  onChange,
+  options,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: string[];
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Close on outside click
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  // Close on Escape
+  useEffect(() => {
+    function handler(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, []);
+
+  return (
+    <div ref={ref} className="relative">
+      {/* Trigger button */}
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className={`${inputCls} flex items-center justify-between text-left ${
+          value ? "text-white" : "text-slate-600"
+        } ${open ? "border-blue-500/50 ring-2 ring-blue-500/20" : ""}`}
+      >
+        <span>{value || "Select your ERP..."}</span>
+        <svg
+          className={`h-4 w-4 shrink-0 text-slate-500 transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth={2}
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {/* Dropdown list */}
+      {open && (
+        <ul className="absolute z-50 mt-1.5 w-full overflow-hidden rounded-xl border border-white/[0.08] bg-[#0f0f1a] shadow-2xl shadow-black/60">
+          {options.map((opt) => (
+            <li key={opt}>
+              <button
+                type="button"
+                onClick={() => { onChange(opt); setOpen(false); }}
+                className={`flex w-full items-center justify-between px-4 py-2.5 text-sm transition-colors hover:bg-white/[0.06] ${
+                  value === opt
+                    ? "text-blue-400 bg-blue-500/10"
+                    : "text-slate-300"
+                }`}
+              >
+                {opt}
+                {value === opt && (
+                  <svg className="h-4 w-4 shrink-0 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
