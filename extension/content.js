@@ -1,4 +1,7 @@
-let screenCaptureIntervalId = null; 
+// Signal to the host page that the EFRION extension is installed and active
+document.documentElement.setAttribute('data-efrion-extension', 'active');
+
+let screenCaptureIntervalId = null;
 let screenCaptureInterval = 2000;
 let domDirty = true;
 let cachedAccessibilityTree = [];
