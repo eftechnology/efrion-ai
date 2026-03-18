@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, FormEvent } from "react";
+import Logo from "@/components/Logo";
 
 const erpSystems = [
   "SAP",
@@ -66,9 +67,7 @@ export default function RequestAccessPage() {
         {/* Logo */}
         <div className="mb-10 flex flex-col items-center gap-2">
           <a href="/" className="flex items-center gap-2.5">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 text-sm font-bold text-white shadow-lg shadow-blue-600/30">
-              EF
-            </div>
+            <Logo size={40} className="shadow-lg shadow-blue-600/30" />
             <span className="text-lg font-semibold text-white">EFRION</span>
           </a>
         </div>

@@ -1,3 +1,5 @@
+import Logo from "./Logo";
+
 export default function Footer() {
   return (
     <footer className="relative border-t border-white/[0.06] px-6 py-16">
@@ -6,9 +8,7 @@ export default function Footer() {
           {/* Brand */}
           <div className="flex flex-col gap-4">
             <div className="flex items-center gap-2.5">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-xs font-bold text-white shadow-lg shadow-blue-600/30">
-                EF
-              </div>
+              <Logo size={32} className="shadow-lg shadow-blue-600/30" />
               <span className="text-base font-semibold text-white">EFRION</span>
             </div>
             <p className="max-w-xs text-sm leading-relaxed text-slate-500">

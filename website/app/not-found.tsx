@@ -1,12 +1,11 @@
 import Link from 'next/link';
+import Logo from '@/components/Logo';
 
 export default function NotFound() {
   return (
     <div className="min-h-screen bg-[#05050a] text-white flex items-center justify-center px-6">
       <div className="text-center">
-        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-600 text-2xl font-bold text-white mx-auto mb-6">
-          EF
-        </div>
+        <Logo size={64} className="mx-auto mb-6 shadow-lg shadow-blue-600/30" />
         <h1 className="text-6xl font-bold text-white mb-3">404</h1>
         <p className="text-lg text-white/50 mb-8">This page doesn&apos;t exist.</p>
         <Link

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import Logo from "@/components/Logo";
 
 // ── Scripted demo sequence ──────────────────────────────────────────────────
 
@@ -486,9 +487,7 @@ export default function DemoPage() {
 
         <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-6">
           <a href="/" className="flex items-center gap-2">
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-600 text-xs font-bold text-white">
-              EF
-            </div>
+            <Logo size={28} />
             <span className="text-sm font-semibold text-white">EFRION</span>
             <span className="rounded-full border border-green-500/20 bg-green-500/10 px-2 py-0.5 text-[10px] font-semibold text-green-400">
               Private Demo
