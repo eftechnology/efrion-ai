@@ -19,6 +19,15 @@ export const metadata: Metadata = {
   title: "EFRION AI Autopilot — Voice-Powered ERP Navigation",
   description:
     "EFRION is a real-time AI copilot for ERP systems. Just speak — Gemini 2.5 Live sees your screen, understands your intent, and navigates for you.",
+  icons: {
+    icon: [
+      { url: "/favicon/favicon.ico" },
+      { url: "/favicon/favicon-96x96.png", sizes: "96x96", type: "image/png" },
+      { url: "/favicon/favicon.svg", type: "image/svg+xml" },
+    ],
+    apple: "/favicon/apple-touch-icon.png",
+  },
+  manifest: "/favicon/site.webmanifest",
   openGraph: {
     title: "EFRION AI Autopilot",
     description:
