@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 import nodemailer from 'nodemailer';
+import { render } from '@react-email/render';
+import AdminNotificationEmail from '@/emails/AdminNotificationEmail';
+import AccessRequestConfirmEmail from '@/emails/AccessRequestConfirmEmail';
 
 const {
   SMTP_HOST,
@@ -63,39 +66,12 @@ export async function POST(request: Request) {
     const from = SMTP_FROM ?? `EFRION AI <${SMTP_USER}>`;
     const notifyTo = NOTIFY_EMAIL ?? 'hello@efrion.com';
 
-    const adminHtml = `
-      <div style="font-family:sans-serif;max-width:600px;margin:0 auto">
-        <h2 style="color:#3b82f6">New Demo Access Request</h2>
-        <table style="width:100%;border-collapse:collapse">
-          <tr><td style="padding:8px 0;color:#6b7280;width:130px">Name</td><td style="padding:8px 0;color:#111"><strong>${name}</strong></td></tr>
-          <tr><td style="padding:8px 0;color:#6b7280">Email</td><td style="padding:8px 0;color:#111">${email}</td></tr>
-          <tr><td style="padding:8px 0;color:#6b7280">Company</td><td style="padding:8px 0;color:#111">${company || '—'}</td></tr>
-          <tr><td style="padding:8px 0;color:#6b7280">Role</td><td style="padding:8px 0;color:#111">${role || '—'}</td></tr>
-          <tr><td style="padding:8px 0;color:#6b7280">ERP System</td><td style="padding:8px 0;color:#111">${erpSystem || '—'}</td></tr>
-          <tr><td style="padding:8px 0;color:#6b7280;vertical-align:top">Message</td><td style="padding:8px 0;color:#111">${message || '—'}</td></tr>
-          <tr><td style="padding:8px 0;color:#6b7280">Submitted</td><td style="padding:8px 0;color:#111">${entry.submittedAt}</td></tr>
-        </table>
-        <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0" />
-        <p style="color:#9ca3af;font-size:12px">Reply directly to this email to contact the requester.</p>
-      </div>
-    `;
-
-    const confirmHtml = `
-      <div style="font-family:sans-serif;max-width:600px;margin:0 auto">
-        <h2 style="color:#3b82f6">We received your request, ${name.split(' ')[0]}!</h2>
-        <p style="color:#374151">Thanks for your interest in <strong>EFRION AI Autopilot</strong>.</p>
-        <p style="color:#374151">We are reviewing your request and will send your demo credentials to <strong>${email}</strong> within 1-2 business days.</p>
-        <div style="margin:24px 0;padding:16px;background:#f9fafb;border-radius:8px">
-          <p style="margin:0;color:#6b7280;font-size:14px">Your request summary:</p>
-          <p style="margin:8px 0 0;color:#111;font-size:14px">ERP System: <strong>${erpSystem || 'Not specified'}</strong></p>
-        </div>
-        <p style="color:#374151">In the meantime, feel free to explore our <a href="https://ai.efrion.com" style="color:#3b82f6">website</a> or check the project on <a href="https://github.com/eftechnology/efrion-ai" style="color:#3b82f6">GitHub</a>.</p>
-        <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0" />
-        <p style="color:#9ca3af;font-size:12px">EFRION AI · <a href="https://ai.efrion.com" style="color:#9ca3af">ai.efrion.com</a></p>
-      </div>
-    `;
-
     try {
+      const [adminHtml, confirmHtml] = await Promise.all([
+        render(AdminNotificationEmail(entry)),
+        render(AccessRequestConfirmEmail(entry)),
+      ]);
+
       await Promise.all([
         transport.sendMail({
           from,
