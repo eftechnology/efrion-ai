@@ -2,6 +2,34 @@
 
 ---
 
+## v2.3 — Security, Reliability & Deployment Polish (2026-03-18)
+
+### Security
+- **CORS restricted** — `allow_origins` changed from `["*"]` to `ai.efrion.com` + `chrome-extension://` regex; prevents unauthorized sites from connecting to the backend
+- **`/demo` route protected** — Next.js middleware intercepts all `/demo/*` requests and redirects to `/login` if session cookie is missing or invalid
+- **`deploy.yml` pinned** — `appleboy/ssh-action` pinned to `v1.2.0` (was `@master`) to prevent supply chain attacks
+
+### Reliability
+- **Exponential backoff** — WebSocket reconnect now backs off from 1s → 2s → 4s → … up to 30s max; resets on successful connect
+- **Configurable WebSocket URL** — extension reads `ws_url` from `chrome.storage.local`; defaults to `wss://ai-api.efrion.com/ws` (was hard-coded to `ws://localhost:8000`)
+- **Docker health checks** — both `website` and `backend` services now have health checks; Docker restarts unhealthy containers automatically
+- **`/health` endpoint** — `GET /health` returns `{"status": "ok"}` for health check and monitoring use
+
+### Extension
+- **Extension detection flag** — content.js sets `data-efrion-extension="active"` on `<html>` on every page load
+- **Install banner on demo page** — shows a yellow warning bar with a "Download from GitHub" button when extension is not detected
+
+### Website & Analytics
+- **GA4 analytics** — Google Analytics 4 injected via `next/script` when `NEXT_PUBLIC_GA_ID` is set; passed as Docker build arg so it's baked into the bundle at compile time
+- **Custom 404 page** — styled to match the site; replaces default Next.js error page
+
+### Developer Experience
+- **README badges** — Deploy, License, Python, Chrome Extension, Gemini badges added to README header
+- **Reproducible Testing section** — step-by-step judge/reviewer guide added to README with test scenarios, expected outcomes, and troubleshooting table
+- **Danger Zone modal** — replaced `window.confirm()` system dialog in `efrion_erp.html` Settings with a styled UI confirmation modal
+
+---
+
 ## v2.2 — Silent Mode & Accessibility Fix (2026-03-16)
 
 ### New Features

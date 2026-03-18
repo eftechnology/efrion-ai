@@ -1,6 +1,6 @@
 # EFRION AI Autopilot — Roadmap
 
-> Current version: **v2.2** · Last updated: 2026-03-16
+> Current version: **v2.3** · Last updated: 2026-03-18
 
 ---
 
@@ -74,14 +74,30 @@
 - [x] `efrion_erp.html` — comprehensive test ERP with Employees, Orders, Reports, modals, toasts
 - [x] EFRION promo website (Next.js) — Hero, Features, Architecture, Demo Scenarios
 - [x] Gated demo access — login + request-access flow, persisted to `data/access-requests.json`
-- [x] RELEASE.md — full release history from v0.1 to v2.2
+- [x] RELEASE.md — full release history from v0.1 to v2.3
+
+### Security & Reliability (v2.3)
+- [x] CORS restricted to `ai.efrion.com` + `chrome-extension://` origins
+- [x] `/health` endpoint added to backend
+- [x] Docker health checks for website and backend services
+- [x] WebSocket URL configurable via `chrome.storage.local` (defaults to `wss://ai-api.efrion.com/ws`)
+- [x] Exponential backoff on WebSocket reconnect (1s → 2s → 4s … 30s max)
+- [x] Extension detection flag (`data-efrion-extension`) set by content.js on every page
+- [x] `/demo` route protected by Next.js middleware — redirects to `/login` if session invalid
+- [x] Custom 404 page
+
+### Analytics & Deployment (v2.3)
+- [x] GA4 analytics injection via `NEXT_PUBLIC_GA_ID` build arg
+- [x] `deploy.yml` pinned to `appleboy/ssh-action@v1.2.0`
+- [x] CI/CD pipeline — GitHub Actions auto-deploy on push to master
+- [x] Docker Compose deployment — Traefik + Let's Encrypt TLS
 
 ---
 
 ## 🔴 Critical — Security & Correctness
 
 - [ ] **Validate API key on startup** — `os.environ.get("GEMINI_API_KEY", "YOUR_GEMINI_API_KEY_HERE")` silently accepts placeholder; raise `ValueError` if missing or equals placeholder
-- [ ] **Restrict CORS** — `allow_origins=["*"]` allows any site to call the local backend; change to `chrome-extension://<id>` or `localhost` only
+- [x] **Restrict CORS** — done in v2.3; restricted to `ai.efrion.com` + `chrome-extension://` regex
 - [ ] **Fix `type_text` event coverage** — only fires `input` + `change`; React/Vue/Angular controlled inputs also need `focus`, `keydown`, `keyup`, `blur`
 
 ---
@@ -100,7 +116,8 @@
 - [ ] **Extract constants** — magic numbers (`300` debounce, `800` dead-end timeout, `50` JPEG quality, `16000` sample rate) scattered inline; add `CONFIG` object at top of each file
 - [ ] **Split `content.js` into ES modules** — 1000+ line file mixes HUD, audio, DOM, automation, undo; split into `hud.js`, `audio.js`, `dom.js`, `automation.js`, `history.js`
 - [ ] **Structured backend logging** — replace `print()` with Python `logging` module (`DEBUG`/`INFO`/`WARNING`/`ERROR`)
-- [ ] **Make hardcoded values configurable** — WebSocket URL, model name, JPEG quality hardcoded; move to `.env` / `chrome.storage`
+- [x] **Make WebSocket URL configurable** — done in v2.3; reads from `chrome.storage.local`, falls back to `wss://ai-api.efrion.com/ws`
+- [ ] **Make model name and JPEG quality configurable** — still hardcoded; move to `.env` / `chrome.storage`
 
 ---
 
@@ -131,7 +148,6 @@
 ## 🚀 Demo & Deployment
 
 - [ ] **Record hackathon demo video** — key scenes: ghost cursor execution, barge-in interruption, undo; upload to YouTube, embed on promo site
-- [ ] **Deploy promo website to Vercel** — set `DEMO_USERNAME`, `DEMO_PASSWORD`, `SESSION_TOKEN` as Vercel env vars
 - [ ] **Request-access email notification** — integrate Resend to email new access requests to admin (local JSON file breaks on Vercel serverless)
 
 ---
@@ -141,6 +157,6 @@
 - [ ] Pre-built workflow templates for SAP, Oracle, NetSuite, Odoo
 - [ ] Multi-language audio support with accent-aware recognition
 - [ ] Audit log — persist all AI actions with timestamps to `chrome.storage.local`
-- [ ] Docker container for backend deployment
-- [ ] CI/CD pipeline (GitHub Actions: lint → test → build)
+- [x] Docker container for backend deployment — done
+- [x] CI/CD pipeline (GitHub Actions: lint → test → build) — done
 - [ ] Error tracking integration (Sentry)
