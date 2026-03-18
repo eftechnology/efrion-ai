@@ -475,7 +475,8 @@ export default function DemoPage() {
   const router = useRouter();
 
   async function logout() {
-    await fetch("/api/auth/logout", { method: "POST" });
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "";
+    await fetch(`${apiUrl}/api/auth/logout`, { method: "POST", credentials: "include" });
     router.push("/");
   }
 

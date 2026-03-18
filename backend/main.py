@@ -20,7 +20,8 @@ app = FastAPI()
 
 ALLOWED_ORIGINS = [
     "https://ai.efrion.com",
-    "chrome-extension://",  # prefix-matched below
+    "http://localhost:3000",
+    "http://localhost:3001",
 ]
 
 app.add_middleware(
@@ -31,6 +32,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+from api import router  # noqa: E402
+app.include_router(router)
 
 # Initialize the GenAI client with v1alpha for experimental model support
 client = genai.Client(http_options={'api_version': 'v1alpha'})

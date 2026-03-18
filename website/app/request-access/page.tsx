@@ -49,10 +49,12 @@ export default function RequestAccessPage() {
     }
 
     try {
-      const res = await fetch("/api/request-access", {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "";
+      const res = await fetch(`${apiUrl}/api/request-access`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...form, turnstileToken }),
+        credentials: "include",
       });
 
       const data = await res.json();

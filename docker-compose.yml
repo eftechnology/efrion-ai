@@ -33,6 +33,7 @@ services:
         - NEXT_PUBLIC_TURNSTILE_SITE_KEY=${NEXT_PUBLIC_TURNSTILE_SITE_KEY}
         - NEXT_PUBLIC_UMAMI_URL=${NEXT_PUBLIC_UMAMI_URL}
         - NEXT_PUBLIC_UMAMI_WEBSITE_ID=${NEXT_PUBLIC_UMAMI_WEBSITE_ID}
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-https://ai-api.efrion.com}
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3000').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))\""]
@@ -42,18 +43,7 @@ services:
       start_period: 60s
     environment:
       - NODE_ENV=production
-      - DEMO_USERNAME=${DEMO_USERNAME}
-      - DEMO_PASSWORD=${DEMO_PASSWORD}
-      - SESSION_TOKEN=${SESSION_TOKEN}
-      - SMTP_HOST=${SMTP_HOST}
-      - SMTP_PORT=${SMTP_PORT:-587}
-      - SMTP_USER=${SMTP_USER}
-      - SMTP_PASS=${SMTP_PASS}
-      - SMTP_FROM=${SMTP_FROM}
-      - NOTIFY_EMAIL=${NOTIFY_EMAIL:-hello@efrion.com}
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
-      - TURNSTILE_SECRET_KEY=${TURNSTILE_SECRET_KEY}
+      - SESSION_SECRET=${SESSION_SECRET}
     labels:
       - traefik.enable=true
       - traefik.http.routers.website.rule=Host(`ai.efrion.com`)
@@ -78,6 +68,21 @@ services:
     environment:
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - ENABLE_SAFETY_LOCK=${ENABLE_SAFETY_LOCK:-false}
+      - SESSION_SECRET=${SESSION_SECRET}
+      - ADMIN_SECRET=${ADMIN_SECRET}
+      - ACCESS_TOKEN_TTL_HOURS=${ACCESS_TOKEN_TTL_HOURS:-48}
+      - APP_URL=${APP_URL:-https://ai.efrion.com}
+      - COOKIE_DOMAIN=${COOKIE_DOMAIN:-.efrion.com}
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASS=${SMTP_PASS}
+      - SMTP_FROM=${SMTP_FROM}
+      - NOTIFY_EMAIL=${NOTIFY_EMAIL:-hello@efrion.com}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+      - TURNSTILE_SECRET_KEY=${TURNSTILE_SECRET_KEY}
+      - RATE_LIMIT_MAX=${RATE_LIMIT_MAX:-10}
     labels:
       - traefik.enable=true
       # HTTP + WebSocket traffic
