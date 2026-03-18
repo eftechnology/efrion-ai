@@ -16,6 +16,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://ai.efrion.com"),
   title: "EFRION AI Autopilot — Voice-Powered ERP Navigation",
   description:
     "EFRION is a real-time AI copilot for ERP systems. Just speak — Gemini 2.5 Live sees your screen, understands your intent, and navigates for you.",
