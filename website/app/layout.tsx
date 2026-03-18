@@ -24,6 +24,21 @@ export const metadata: Metadata = {
     description:
       "Voice-powered AI that navigates any ERP interface. Built with Gemini 2.5 Multimodal Live API.",
     type: "website",
+    images: [
+      {
+        url: "/media/EFRION-AI-Autopilot.png",
+        width: 1200,
+        height: 630,
+        alt: "EFRION AI Autopilot",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "EFRION AI Autopilot",
+    description:
+      "Voice-powered AI that navigates any ERP interface. Built with Gemini 2.5 Multimodal Live API.",
+    images: ["/media/EFRION-AI-Autopilot.png"],
   },
 };
 
