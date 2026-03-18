@@ -42,6 +42,12 @@ services:
       - DEMO_USERNAME=${DEMO_USERNAME}
       - DEMO_PASSWORD=${DEMO_PASSWORD}
       - SESSION_TOKEN=${SESSION_TOKEN}
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASS=${SMTP_PASS}
+      - SMTP_FROM=${SMTP_FROM}
+      - NOTIFY_EMAIL=${NOTIFY_EMAIL:-hello@efrion.com}
     labels:
       - traefik.enable=true
       - traefik.http.routers.website.rule=Host(`ai.efrion.com`)
