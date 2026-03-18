@@ -6,13 +6,68 @@ import { render } from '@react-email/render';
 import AdminNotificationEmail from '@/emails/AdminNotificationEmail';
 import AccessRequestConfirmEmail from '@/emails/AccessRequestConfirmEmail';
 
+// ── Rate limiting (in-memory, per IP) ────────────────────────────────────────
+const rateLimit = new Map<string, { count: number; resetAt: number }>();
+const RATE_LIMIT = 3;          // max submissions
+const RATE_WINDOW = 60 * 60 * 1000; // per 1 hour
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const entry = rateLimit.get(ip);
+  if (!entry || now > entry.resetAt) {
+    rateLimit.set(ip, { count: 1, resetAt: now + RATE_WINDOW });
+    return false;
+  }
+  if (entry.count >= RATE_LIMIT) return true;
+  entry.count++;
+  return false;
+}
+
+// ── Input limits ──────────────────────────────────────────────────────────────
+const LIMITS = {
+  name:      { max: 100 },
+  email:     { max: 254 },  // RFC 5321
+  company:   { max: 100 },
+  role:      { max: 100 },
+  erpSystem: { max: 100 },
+  message:   { max: 2000 },
+};
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function validate(body: Record<string, unknown>): string | null {
+  const { name, email, company, role, erpSystem, message } = body;
+
+  if (!name || typeof name !== 'string' || !name.trim())
+    return 'Name is required.';
+  if (!email || typeof email !== 'string' || !email.trim())
+    return 'Email is required.';
+  if (!EMAIL_RE.test(String(email).trim()))
+    return 'Invalid email address.';
+
+  for (const [field, { max }] of Object.entries(LIMITS)) {
+    const val = body[field];
+    if (val && typeof val === 'string' && val.length > max)
+      return `${field} must be ${max} characters or fewer.`;
+  }
+
+  // Reject unexpected types
+  for (const key of ['name', 'email', 'company', 'role', 'erpSystem', 'message']) {
+    if (body[key] !== undefined && typeof body[key] !== 'string')
+      return `Invalid value for ${key}.`;
+  }
+
+  const allowed = new Set(['Oracle ERP', 'SAP', 'Microsoft Dynamics 365', 'NetSuite',
+    'Odoo', 'Epicor', 'Infor', 'Custom / In-house ERP', 'Other', '']);
+  if (erpSystem && !allowed.has(String(erpSystem)))
+    return 'Invalid ERP system selection.';
+
+  return null;
+}
+
+// ── SMTP transport ────────────────────────────────────────────────────────────
 const {
-  SMTP_HOST,
-  SMTP_PORT,
-  SMTP_USER,
-  SMTP_PASS,
-  SMTP_FROM,
-  NOTIFY_EMAIL,
+  SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM, NOTIFY_EMAIL,
 } = process.env;
 
 function createTransport() {
@@ -25,35 +80,59 @@ function createTransport() {
   });
 }
 
+// ── Handler ───────────────────────────────────────────────────────────────────
 export async function POST(request: Request) {
-  const body = await request.json();
-  const { name, email, company, role, erpSystem, message } = body;
+  // Rate limit by IP
+  const ip =
+    request.headers.get('x-forwarded-for')?.split(',')[0].trim() ??
+    request.headers.get('x-real-ip') ??
+    'unknown';
 
-  if (!name || !email) {
-    return NextResponse.json({ error: 'Name and email are required.' }, { status: 400 });
+  if (isRateLimited(ip)) {
+    return NextResponse.json(
+      { error: 'Too many requests. Please try again later.' },
+      { status: 429 }
+    );
   }
+
+  // Parse + validate body
+  let body: Record<string, unknown>;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid request body.' }, { status: 400 });
+  }
+
+  const validationError = validate(body);
+  if (validationError) {
+    return NextResponse.json({ error: validationError }, { status: 400 });
+  }
+
+  const { name, email, company, role, erpSystem, message } = body as Record<string, string>;
 
   const entry = {
     id: Date.now(),
-    name,
-    email,
-    company: company || '',
-    role: role || '',
-    erpSystem: erpSystem || '',
-    message: message || '',
+    name:      name.trim(),
+    email:     email.trim().toLowerCase(),
+    company:   (company  ?? '').trim(),
+    role:      (role     ?? '').trim(),
+    erpSystem: (erpSystem ?? '').trim(),
+    message:   (message  ?? '').trim(),
     submittedAt: new Date().toISOString(),
     status: 'pending',
   };
 
-  // ── Persist to JSON file (backup) ────────────────────────────────────────
+  // ── Persist to JSON file (backup, max 1000 entries) ───────────────────────
   try {
     const dataDir = path.join(process.cwd(), 'data');
     if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
     const filePath = path.join(dataDir, 'access-requests.json');
-    const existing = fs.existsSync(filePath)
+    const existing: unknown[] = fs.existsSync(filePath)
       ? JSON.parse(fs.readFileSync(filePath, 'utf-8'))
       : [];
     existing.push(entry);
+    // Keep only the last 1000 entries to bound file size
+    if (existing.length > 1000) existing.splice(0, existing.length - 1000);
     fs.writeFileSync(filePath, JSON.stringify(existing, null, 2));
   } catch (err) {
     console.error('Failed to persist access request:', err);
@@ -76,13 +155,13 @@ export async function POST(request: Request) {
         transport.sendMail({
           from,
           to: notifyTo,
-          replyTo: email,
-          subject: `Demo request: ${name}${company ? ` @ ${company}` : ''}`,
+          replyTo: entry.email,
+          subject: `Demo request: ${entry.name}${entry.company ? ` @ ${entry.company}` : ''}`,
           html: adminHtml,
         }),
         transport.sendMail({
           from,
-          to: email,
+          to: entry.email,
           subject: 'We received your EFRION demo request',
           html: confirmHtml,
         }),
