@@ -554,7 +554,7 @@ export default function DemoPage() {
           </div>
           <p className="mt-4 text-xs text-slate-600">
             Need the source code?{" "}
-            <a href="https://github.com" className="text-blue-400 hover:text-blue-300">
+            <a href="https://github.com/eftechnology/efrion-ai" className="text-blue-400 hover:text-blue-300">
               View on GitHub →
             </a>
           </p>
