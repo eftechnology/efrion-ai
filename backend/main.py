@@ -18,9 +18,15 @@ ENABLE_SAFETY_LOCK = os.environ.get("ENABLE_SAFETY_LOCK", "false").lower() == "t
 
 app = FastAPI()
 
+ALLOWED_ORIGINS = [
+    "https://ai.efrion.com",
+    "chrome-extension://",  # prefix-matched below
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=r"chrome-extension://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -130,6 +136,11 @@ if ENABLE_SAFETY_LOCK:
     )
 
 ui_tools = types.Tool(function_declarations=base_tools)
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):

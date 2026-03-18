@@ -1,6 +1,7 @@
 let ws = null;
 let isIntentionalDisconnect = false;
 let reconnectInterval = null;
+let reconnectAttempts = 0;
 let lastDataUrl = null;
 let currentPlan = null; // Track the AI's plan across reloads
 
@@ -124,13 +125,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 });
 
+const DEFAULT_WS_URL = 'wss://ai-api.efrion.com/ws';
+
 function connectWebSocket() {
     if (ws && ws.readyState === WebSocket.OPEN) return;
 
-    ws = new WebSocket('ws://localhost:8000/ws');
+    chrome.storage.local.get(['ws_url'], (result) => {
+        const wsUrl = result.ws_url || DEFAULT_WS_URL;
+        _openWebSocket(wsUrl);
+    });
+}
+
+function _openWebSocket(wsUrl) {
+    ws = new WebSocket(wsUrl);
     
     ws.onopen = () => {
         console.log('✅ WebSocket connected');
+        reconnectAttempts = 0;
         if (reconnectInterval) {
             clearTimeout(reconnectInterval);
             reconnectInterval = null;
@@ -156,7 +167,8 @@ function connectWebSocket() {
         sendMessageToActiveTab({action: 'stop'});
         
         if (!isIntentionalDisconnect) {
-            reconnectInterval = setTimeout(connectWebSocket, 3000);
+            const delay = Math.min(1000 * 2 ** (reconnectAttempts++), 30000);
+            reconnectInterval = setTimeout(connectWebSocket, delay);
         }
     };
     
