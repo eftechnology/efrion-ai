@@ -48,6 +48,8 @@ services:
       - SMTP_PASS=${SMTP_PASS}
       - SMTP_FROM=${SMTP_FROM}
       - NOTIFY_EMAIL=${NOTIFY_EMAIL:-hello@efrion.com}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
     labels:
       - traefik.enable=true
       - traefik.http.routers.website.rule=Host(`ai.efrion.com`)

@@ -65,6 +65,46 @@ function validate(body: Record<string, unknown>): string | null {
   return null;
 }
 
+// ── Telegram notification ─────────────────────────────────────────────────────
+async function sendTelegram(entry: {
+  name: string; email: string; company: string;
+  role: string; erpSystem: string; message: string; submittedAt: string;
+}) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+  if (!token || !chatId) return;
+
+  const line = (label: string, value: string) =>
+    value ? `<b>${label}:</b> ${value}` : '';
+
+  const lines = [
+    '🤖 <b>EFRION — New Demo Request</b>',
+    '',
+    line('👤 Name',    entry.name),
+    line('📧 Email',   entry.email),
+    line('🏢 Company', entry.company),
+    line('💼 Role',    entry.role),
+    line('⚙️ ERP',     entry.erpSystem),
+    entry.message ? `💬 <b>Message:</b>\n${entry.message}` : '',
+    '',
+    `🕐 ${new Date(entry.submittedAt).toUTCString()}`,
+  ].filter(Boolean).join('\n');
+
+  try {
+    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: lines,
+        parse_mode: 'HTML',
+      }),
+    });
+  } catch (err) {
+    console.error('Failed to send Telegram notification:', err);
+  }
+}
+
 // ── SMTP transport ────────────────────────────────────────────────────────────
 const {
   SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM, NOTIFY_EMAIL,
@@ -137,6 +177,9 @@ export async function POST(request: Request) {
   } catch (err) {
     console.error('Failed to persist access request:', err);
   }
+
+  // ── Telegram notification ─────────────────────────────────────────────────
+  sendTelegram(entry); // fire-and-forget, non-blocking
 
   // ── Send emails via SMTP ──────────────────────────────────────────────────
   const transport = createTransport();
