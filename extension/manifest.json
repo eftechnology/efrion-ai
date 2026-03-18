@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ERP AI Autopilot",
-  "version": "1.0",
+  "version": "2.3.0",
   "description": "AI Autopilot for ERP system using Gemini 2.5 Multimodal Live API",
   "permissions": [
     "activeTab",
