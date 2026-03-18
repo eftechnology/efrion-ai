@@ -237,7 +237,7 @@ async def request_access(data: AccessRequest, request: Request):
         )
 
     now = datetime.datetime.now(tz=datetime.timezone.utc).isoformat()
-    entry = access_tokens.create_pending(
+    entry = await access_tokens.create_pending(
         name=data.name,
         email=data.email,
         company=data.company,
@@ -297,7 +297,7 @@ class LoginRequest(BaseModel):
 
 @router.post("/api/auth/login")
 async def login(data: LoginRequest, response: Response):
-    token = access_tokens.find_active(data.email, data.accessCode.strip())
+    token = await access_tokens.find_active(data.email, data.accessCode.strip())
     if not token:
         return Response(
             content='{"error":"Invalid credentials or access has expired."}',
@@ -334,7 +334,7 @@ async def admin_approve(id: str = "", secret: str = ""):
     if not id:
         return HTMLResponse(_page("Bad Request", "<p>Missing id parameter.</p>"), status_code=400)
 
-    existing = access_tokens.find_by_id(id)
+    existing = await access_tokens.find_by_id(id)
     if not existing:
         return HTMLResponse(_page("Not Found", "<p>Request not found.</p>"), status_code=404)
     if existing["status"] == "active":
@@ -342,7 +342,7 @@ async def admin_approve(id: str = "", secret: str = ""):
             _page("Already Approved", f"<p>Access for <strong>{existing['email']}</strong> was already approved.</p>"),
         )
 
-    entry = access_tokens.approve(id, TTL_HOURS)
+    entry = await access_tokens.approve(id, TTL_HOURS)
     if not entry:
         return HTMLResponse(_page("Error", "<p>Failed to approve request.</p>"), status_code=500)
 

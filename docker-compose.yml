@@ -53,6 +53,24 @@ services:
     networks:
       - web
 
+  # ── PostgreSQL database ───────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=efrion
+      - POSTGRES_USER=efrion
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U efrion -d efrion"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - web
+
   # ── FastAPI backend (ai-api.efrion.com) ──────────────────────────────────────
   backend:
     build:
@@ -65,9 +83,13 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
     environment:
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - ENABLE_SAFETY_LOCK=${ENABLE_SAFETY_LOCK:-false}
+      - DATABASE_URL=postgresql://efrion:${POSTGRES_PASSWORD}@postgres:5432/efrion
       - SESSION_SECRET=${SESSION_SECRET}
       - ADMIN_SECRET=${ADMIN_SECRET}
       - ACCESS_TOKEN_TTL_HOURS=${ACCESS_TOKEN_TTL_HOURS:-48}
@@ -99,3 +121,4 @@ networks:
 
 volumes:
   letsencrypt:
+  postgres_data:

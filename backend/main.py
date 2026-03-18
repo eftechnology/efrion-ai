@@ -34,7 +34,14 @@ app.add_middleware(
 )
 
 from api import router  # noqa: E402
+import database         # noqa: E402
+
 app.include_router(router)
+
+
+@app.on_event("startup")
+async def startup():
+    await database.init()
 
 # Initialize the GenAI client with v1alpha for experimental model support
 client = genai.Client(http_options={'api_version': 'v1alpha'})

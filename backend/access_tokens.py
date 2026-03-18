@@ -1,39 +1,49 @@
 """
-Access token CRUD — stores pending/active/expired tokens in data/access-tokens.json.
-Key names match the TypeScript AccessToken interface for file compatibility.
+Access token CRUD backed by PostgreSQL.
+All public functions are async. Key names use camelCase to match the
+rest of the codebase (TypeScript convention).
 """
 
-import json
-import os
-import pathlib
+import datetime
 import secrets
 import time
 from typing import Optional
 
-_DATA_FILE = pathlib.Path("data/access-tokens.json")
-
-
-def _read() -> list[dict]:
-    if not _DATA_FILE.exists():
-        return []
-    try:
-        return json.loads(_DATA_FILE.read_text(encoding="utf-8"))
-    except Exception:
-        return []
-
-
-def _write(tokens: list[dict]) -> None:
-    _DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
-    _DATA_FILE.write_text(
-        json.dumps(tokens, indent=2, ensure_ascii=False), encoding="utf-8"
-    )
+import database
 
 
 def _hex(n: int = 16) -> str:
     return secrets.token_hex(n)
 
 
-def create_pending(
+def _to_dict(row) -> dict:
+    """Convert an asyncpg Record to the camelCase dict shape used by api.py."""
+    if row is None:
+        return None
+
+    def iso(v):
+        if isinstance(v, datetime.datetime):
+            if v.tzinfo is None:
+                v = v.replace(tzinfo=datetime.timezone.utc)
+            return v.isoformat()
+        return v
+
+    return {
+        "id":          row["id"],
+        "name":        row["name"],
+        "email":       row["email"],
+        "company":     row["company"],
+        "role":        row["role"],
+        "erpSystem":   row["erp_system"],
+        "message":     row["message"],
+        "submittedAt": iso(row["submitted_at"]),
+        "status":      row["status"],
+        "accessToken": row["access_token"],
+        "expiresAt":   iso(row["expires_at"]) if row["expires_at"] else None,
+    }
+
+
+async def create_pending(
     *,
     name: str,
     email: str,
@@ -43,60 +53,66 @@ def create_pending(
     message: str,
     submitted_at: str,
 ) -> dict:
-    tokens = _read()
-    entry = {
-        "id": f"req_{int(time.time() * 1000)}_{_hex(4)}",
-        "name": name,
-        "email": email.lower().strip(),
-        "company": company,
-        "role": role,
-        "erpSystem": erp_system,
-        "message": message,
-        "submittedAt": submitted_at,
-        "status": "pending",
-        "accessToken": "",
-        "expiresAt": None,
-    }
-    tokens.append(entry)
-    _write(tokens)
-    return entry
+    id_ = f"req_{int(time.time() * 1000)}_{_hex(4)}"
+    submitted = datetime.datetime.fromisoformat(submitted_at)
+
+    async with database.pool().acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            INSERT INTO access_requests
+                (id, name, email, company, role, erp_system, message, submitted_at)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+            RETURNING *
+            """,
+            id_, name, email.lower().strip(),
+            company, role, erp_system, message, submitted,
+        )
+    return _to_dict(row)
 
 
-def approve(id_: str, ttl_hours: int) -> Optional[dict]:
-    tokens = _read()
-    idx = next((i for i, t in enumerate(tokens) if t["id"] == id_), None)
-    if idx is None:
-        return None
+async def approve(id_: str, ttl_hours: int) -> Optional[dict]:
     access_token = _hex(16)  # 32-char hex, 128-bit entropy
-    expires_ms = int(time.time() * 1000) + ttl_hours * 3_600_000
-    import datetime
-    expires_at = datetime.datetime.fromtimestamp(
-        expires_ms / 1000, tz=datetime.timezone.utc
-    ).isoformat()
-    tokens[idx] = {
-        **tokens[idx],
-        "status": "active",
-        "accessToken": access_token,
-        "expiresAt": expires_at,
-    }
-    _write(tokens)
-    return tokens[idx]
+    expires_at = datetime.datetime.now(tz=datetime.timezone.utc) + datetime.timedelta(
+        hours=ttl_hours
+    )
+
+    async with database.pool().acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            UPDATE access_requests
+               SET status       = 'active',
+                   access_token = $1,
+                   expires_at   = $2
+             WHERE id = $3
+               AND status = 'pending'
+            RETURNING *
+            """,
+            access_token, expires_at, id_,
+        )
+    return _to_dict(row) if row else None
 
 
-def find_active(email: str, code: str) -> Optional[dict]:
-    import datetime
+async def find_active(email: str, code: str) -> Optional[dict]:
     now = datetime.datetime.now(tz=datetime.timezone.utc)
-    for t in _read():
-        if (
-            t["email"] == email.lower().strip()
-            and t["accessToken"] == code
-            and t["status"] == "active"
-            and t.get("expiresAt")
-            and datetime.datetime.fromisoformat(t["expiresAt"]) > now
-        ):
-            return t
-    return None
+
+    async with database.pool().acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT * FROM access_requests
+             WHERE email        = $1
+               AND access_token = $2
+               AND status       = 'active'
+               AND expires_at   > $3
+            LIMIT 1
+            """,
+            email.lower().strip(), code, now,
+        )
+    return _to_dict(row) if row else None
 
 
-def find_by_id(id_: str) -> Optional[dict]:
-    return next((t for t in _read() if t["id"] == id_), None)
+async def find_by_id(id_: str) -> Optional[dict]:
+    async with database.pool().acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT * FROM access_requests WHERE id = $1", id_
+        )
+    return _to_dict(row) if row else None
